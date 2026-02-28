@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"ride-service/pkg/jwt"
+	"ride-service/pkg/validation"
 )
 
 // Handler exposes driver HTTP endpoints.
@@ -41,6 +42,22 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
+	if !validation.ValidateName(req.Name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return
+	}
+	if !validation.ValidatePhone(req.Phone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		return
+	}
+	if !validation.ValidatePassword(req.Password) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		return
+	}
 	resp, err := h.svc.Register(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -53,6 +70,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	resp, err := h.svc.Login(r.Context(), req)
@@ -79,6 +100,10 @@ func (h *Handler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
+	if !validation.ValidateCoordinates(loc.Lat, loc.Lng) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		return
+	}
 	if err := h.svc.UpdateLocation(r.Context(), id, loc.Lat, loc.Lng); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -87,11 +112,33 @@ func (h *Handler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetNearby(w http.ResponseWriter, r *http.Request) {
-	lat, _ := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
-	lng, _ := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
+	latStr := r.URL.Query().Get("lat")
+	lngStr := r.URL.Query().Get("lng")
+	if latStr == "" || lngStr == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "lat and lng are required"})
+		return
+	}
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lat"})
+		return
+	}
+	lng, err := strconv.ParseFloat(lngStr, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lng"})
+		return
+	}
+	if !validation.ValidateCoordinates(lat, lng) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		return
+	}
 	radius := 5.0
 	if v := r.URL.Query().Get("radius"); v != "" {
-		radius, _ = strconv.ParseFloat(v, 64)
+		radius, err = strconv.ParseFloat(v, 64)
+		if err != nil || radius <= 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid radius"})
+			return
+		}
 	}
 	ids, err := h.svc.GetNearby(r.Context(), lat, lng, radius)
 	if err != nil {
