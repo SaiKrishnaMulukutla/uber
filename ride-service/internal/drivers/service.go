@@ -26,9 +26,17 @@ func NewService(db *pgxpool.Pool, redis *rredis.Client) *Service {
 // Register creates a new driver account and returns a JWT.
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
 	var exists bool
-	_ = s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM drivers WHERE email=$1)", req.Email).Scan(&exists)
+	if err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM drivers WHERE email=$1)", req.Email).Scan(&exists); err != nil {
+		return nil, err
+	}
 	if exists {
 		return nil, errors.New("email already exists")
+	}
+	if err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM drivers WHERE phone=$1)", req.Phone).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, errors.New("phone already exists")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
