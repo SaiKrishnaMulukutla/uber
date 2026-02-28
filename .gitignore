@@ -1,0 +1,18 @@
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+
+# Go
+ride-service/bin/
+ride-service/vendor/
+
+# Logs
+*.log
+
+# Env — never commit secrets
+.env
+infra/.env
