@@ -34,9 +34,15 @@ func (m *Matcher) Start(ctx context.Context) {
 
 		// Find nearest driver within 5 km
 		drivers, err := m.redis.GetNearbyDrivers(ctx, ev.Pickup.Lat, ev.Pickup.Lng, 5.0, 1)
-		if err != nil || len(drivers) == 0 {
+		if err != nil {
+			// Redis error — return error so Kafka does NOT commit the offset and retries.
+			log.Printf("[matching] redis error for trip %s: %v", ev.TripID, err)
+			return err
+		}
+		if len(drivers) == 0 {
+			// No drivers available — expected case, commit offset, wait for manual assign.
 			log.Printf("[matching] no nearby drivers for trip %s", ev.TripID)
-			return nil // will retry via matching retries or manual assign
+			return nil
 		}
 
 		assigned := events.DriverAssignedEvent{
