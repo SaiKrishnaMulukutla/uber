@@ -14,15 +14,34 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// safeConn wraps a websocket.Conn with a write mutex.
+// gorilla/websocket allows one concurrent writer; this enforces that.
+type safeConn struct {
+	mu sync.Mutex
+	ws *websocket.Conn
+}
+
+func (c *safeConn) writeJSON(v any) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ws.WriteJSON(v)
+}
+
+func (c *safeConn) readMessage() (int, []byte, error) {
+	return c.ws.ReadMessage()
+}
+
+func (c *safeConn) close() { c.ws.Close() }
+
 // Hub manages WebSocket connections per trip.
 type Hub struct {
 	mu    sync.RWMutex
-	conns map[string][]*websocket.Conn
+	conns map[string][]*safeConn
 }
 
 // NewHub creates a tracking hub.
 func NewHub() *Hub {
-	return &Hub{conns: make(map[string][]*websocket.Conn)}
+	return &Hub{conns: make(map[string][]*safeConn)}
 }
 
 // Routes returns a chi.Router for the /ws mount point.
@@ -35,11 +54,13 @@ func (h *Hub) Routes() chi.Router {
 // HandleWS upgrades the connection and subscribes it to a trip.
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	tripID := chi.URLParam(r, "id")
-	conn, err := upgrader.Upgrade(w, r, nil)
+	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[ws] upgrade error: %v", err)
 		return
 	}
+
+	conn := &safeConn{ws: ws}
 
 	h.mu.Lock()
 	h.conns[tripID] = append(h.conns[tripID], conn)
@@ -49,17 +70,18 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	// Block until the client disconnects
 	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
+		if _, _, err := conn.readMessage(); err != nil {
 			break
 		}
 	}
 
 	h.removeConn(tripID, conn)
-	conn.Close()
+	conn.close()
 	log.Printf("[ws] client disconnected from trip %s", tripID)
 }
 
 // BroadcastLocation pushes a driver location update to all subscribers of a trip.
+// Safe for concurrent calls — each safeConn serialises its own writes.
 func (h *Hub) BroadcastLocation(tripID string, lat, lng float64) {
 	h.mu.RLock()
 	conns := h.conns[tripID]
@@ -73,13 +95,13 @@ func (h *Hub) BroadcastLocation(tripID string, lat, lng float64) {
 	}
 
 	for _, c := range conns {
-		if err := c.WriteJSON(msg); err != nil {
+		if err := c.writeJSON(msg); err != nil {
 			log.Printf("[ws] write error: %v", err)
 		}
 	}
 }
 
-func (h *Hub) removeConn(tripID string, conn *websocket.Conn) {
+func (h *Hub) removeConn(tripID string, conn *safeConn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
