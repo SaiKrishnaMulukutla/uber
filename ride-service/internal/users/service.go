@@ -24,11 +24,15 @@ func NewService(db *pgxpool.Pool) *Service {
 // Register creates a new rider account and returns a JWT.
 func (s *Service) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
 	var exists bool
-	_ = s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE email=$1)", req.Email).Scan(&exists)
+	if err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE email=$1)", req.Email).Scan(&exists); err != nil {
+		return nil, err
+	}
 	if exists {
 		return nil, errors.New("email already exists")
 	}
-	_ = s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)", req.Phone).Scan(&exists)
+	if err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE phone=$1)", req.Phone).Scan(&exists); err != nil {
+		return nil, err
+	}
 	if exists {
 		return nil, errors.New("phone already exists")
 	}
