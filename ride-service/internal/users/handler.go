@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"ride-service/pkg/jwt"
+	"ride-service/pkg/validation"
 )
 
 // Handler exposes user HTTP endpoints.
@@ -38,6 +39,22 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
+	if !validation.ValidateName(req.Name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return
+	}
+	if !validation.ValidatePhone(req.Phone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		return
+	}
+	if !validation.ValidatePassword(req.Password) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		return
+	}
 	resp, err := h.svc.Register(r.Context(), req)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -50,6 +67,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	resp, err := h.svc.Login(r.Context(), req)
