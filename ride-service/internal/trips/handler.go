@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"ride-service/pkg/jwt"
+	"ride-service/pkg/validation"
 )
 
 // Handler exposes trip HTTP endpoints.
@@ -37,6 +38,14 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
+	if !validation.ValidateCoordinates(req.PickupLat, req.PickupLng) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pickup coordinates"})
+		return
+	}
+	if !validation.ValidateCoordinates(req.DropLat, req.DropLng) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
+		return
+	}
 
 	trip, err := h.svc.Request(r.Context(), claims.UserID, req)
 	if err != nil {
@@ -63,6 +72,10 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 	var req AssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if req.DriverID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driverId is required"})
 		return
 	}
 

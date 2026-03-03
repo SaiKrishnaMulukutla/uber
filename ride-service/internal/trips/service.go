@@ -115,13 +115,12 @@ func (s *Service) Start(ctx context.Context, tripID string) (*Trip, error) {
 }
 
 // End completes a trip, computes fare, and publishes trip.completed.
+// The status guard is embedded in the SQL so concurrent End calls are safe —
+// only one UPDATE will match (DB row lock), the other gets RowsAffected == 0.
 func (s *Service) End(ctx context.Context, tripID string, distKm *float64) (*Trip, error) {
 	trip, err := s.GetByID(ctx, tripID)
 	if err != nil {
 		return nil, err
-	}
-	if trip.Status != StatusStarted {
-		return nil, errors.New("trip not in STARTED state")
 	}
 
 	// Compute distance
@@ -136,11 +135,15 @@ func (s *Service) End(ctx context.Context, tripID string, distKm *float64) (*Tri
 	fare := 50.0 + km*12.0
 	now := time.Now()
 
-	_, err = s.db.Exec(ctx,
-		`UPDATE trips SET status=$1, fare=$2, completed_at=$3 WHERE id=$4`,
-		StatusCompleted, fare, now, tripID)
+	// AND status=$5 makes the transition atomic — concurrent calls race at DB level.
+	tag, err := s.db.Exec(ctx,
+		`UPDATE trips SET status=$1, fare=$2, completed_at=$3 WHERE id=$4 AND status=$5`,
+		StatusCompleted, fare, now, tripID, StatusStarted)
 	if err != nil {
 		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, errors.New("trip not in STARTED state")
 	}
 
 	// Publish trip.completed
