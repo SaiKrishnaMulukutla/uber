@@ -1,0 +1,693 @@
+{
+  "info": {
+    "name": "Ride-Hailing API",
+    "description": "Complete API collection for the Go ride-hailing system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Create an environment with variable `base_url` = `http://localhost:8000`\n3. Run requests in order — tokens and IDs are auto-captured via test scripts\n\n**Flow:** Health → Register User → Register Driver → Update Location → Request Trip → (wait 5s) → Verify Assignment → Start Trip → End Trip",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",    "value": "http://localhost:8000", "type": "string" },
+    { "key": "rider_token", "value": "", "type": "string" },
+    { "key": "rider_id",    "value": "", "type": "string" },
+    { "key": "driver_token","value": "", "type": "string" },
+    { "key": "driver_id",   "value": "", "type": "string" },
+    { "key": "trip_id",     "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+            "description": "Verify the service is running. No authentication required."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"status\": \"ok\",\n  \"service\": \"ride-service\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Service ok', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('ok');",
+                  "  pm.expect(body.service).to.eql('ride-service');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"password\": \"Pass123!\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
+            "description": "Create a new rider account. Returns JWT token and user profile.\n\n**Validation rules:**\n- name: 2–200 chars\n- email: valid format, max 200 chars\n- phone: E.164 format (e.g. +919999999999)\n- password: 6–100 chars"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "400 Invalid Input",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"invalid email\" }"
+            },
+            {
+              "name": "409 Duplicate Email",
+              "status": "Conflict",
+              "code": 409,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"email already registered\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('rider_token', body.token);",
+                  "  pm.collectionVariables.set('rider_id', body.user.id);",
+                  "  pm.test('Token received', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+                  "  pm.test('User ID received', () => pm.expect(body.user.id).to.be.a('string').and.not.empty);",
+                  "  console.log('rider_id:', body.user.id);",
+                  "} else {",
+                  "  pm.test('Non-201 response', () => pm.response.to.have.status(pm.response.code));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"password\": \"Pass123!\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/users/login", "host": ["{{base_url}}"], "path": ["users", "login"] },
+            "description": "Authenticate a rider. Returns a fresh JWT token."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "401 Wrong Credentials",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"invalid credentials\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('rider_token', body.token);",
+                  "pm.collectionVariables.set('rider_id', body.user.id);",
+                  "pm.test('Token refreshed', () => pm.expect(body.token).to.be.a('string').and.not.empty);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/users/{{rider_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["users", "{{rider_id}}"]
+            },
+            "description": "Fetch rider profile by ID. Requires JWT authentication."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"rating\": 5,\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"missing or invalid token\" }"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"user not found\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('User fields present', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.have.all.keys('id','name','email','phone','rating','created_at');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Drivers",
+      "item": [
+        {
+          "name": "Register Driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"password\": \"Driver123!\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/drivers/register", "host": ["{{base_url}}"], "path": ["drivers", "register"] },
+            "description": "Create a new driver account with vehicle details.\n\n**vehicle_type** defaults to `sedan` if omitted."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"sedan\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"available\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+            },
+            {
+              "name": "409 Duplicate Email",
+              "status": "Conflict",
+              "code": 409,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"email already registered\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('driver_token', body.token);",
+                  "  pm.collectionVariables.set('driver_id', body.driver.id);",
+                  "  pm.test('Driver token received', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+                  "  pm.test('Driver ID received', () => pm.expect(body.driver.id).to.be.a('string').and.not.empty);",
+                  "  console.log('driver_id:', body.driver.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Driver",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"password\": \"Driver123!\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/drivers/login", "host": ["{{base_url}}"], "path": ["drivers", "login"] },
+            "description": "Authenticate a driver. Returns a fresh JWT token."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"status\": \"available\"\n  }\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('driver_token', body.token);",
+                  "pm.collectionVariables.set('driver_id', body.driver.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Driver Profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driver_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/drivers/{{driver_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["drivers", "{{driver_id}}"]
+            },
+            "description": "Fetch driver profile by ID. Requires JWT authentication."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\",\n  \"status\": \"available\",\n  \"rating\": 5,\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Driver fields present', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.include.all.keys('id','name','email','vehicle_type','license_plate','status','rating');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update Driver Location",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 12.9716,\n  \"lng\": 77.5946\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/drivers/{{driver_id}}/location",
+              "host": ["{{base_url}}"],
+              "path": ["drivers", "{{driver_id}}", "location"]
+            },
+            "description": "Update the driver's GPS position in Redis GEO set.\n\nThis is required before requesting a trip — the matching engine uses this location to find the nearest driver.\n\n**Coordinates:** Bangalore city center (12.9716, 77.5946)"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"status\": \"location_updated\" }"
+            },
+            {
+              "name": "400 Invalid Coordinates",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"invalid coordinates\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Location updated', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('location_updated');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find Nearby Drivers",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/drivers/nearby?lat=12.9716&lng=77.5946&radius=5",
+              "host": ["{{base_url}}"],
+              "path": ["drivers", "nearby"],
+              "query": [
+                { "key": "lat",    "value": "12.9716", "description": "Latitude of search center" },
+                { "key": "lng",    "value": "77.5946", "description": "Longitude of search center" },
+                { "key": "radius", "value": "5",       "description": "Search radius in km (default: 5)" }
+              ]
+            },
+            "description": "Query all available drivers within `radius` km of the given coordinates using Redis GEO search.\n\nDrivers must have called **Update Location** first to appear here."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"drivers\": [\n    \"d5e6f7g8-0000-0000-0000-000000000000\"\n  ]\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Drivers array returned', () => {",
+                  "  pm.expect(pm.response.json().drivers).to.be.an('array');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Trips",
+      "item": [
+        {
+          "name": "Request Trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\":   12.9352,\n  \"dropLng\":   77.6245\n}"
+            },
+            "url": { "raw": "{{base_url}}/trips/request", "host": ["{{base_url}}"], "path": ["trips", "request"] },
+            "description": "Request a new ride as a rider.\n\n**What happens behind the scenes:**\n1. Trip saved to PostgreSQL with status `REQUESTED`\n2. `ride.requested` event published to Kafka\n3. Matching consumer finds nearest driver from Redis GEO\n4. `driver.assigned` event published\n5. Trip consumer updates status to `DRIVER_ASSIGNED`\n\n**Wait 5 seconds after this call before checking trip status.**"
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"REQUESTED\"\n}"
+            },
+            {
+              "name": "400 Invalid Coordinates",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"invalid pickup coordinates\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('trip_id', body.trip_id);",
+                  "pm.test('Trip ID received', () => pm.expect(body.trip_id).to.be.a('string').and.not.empty);",
+                  "pm.test('Status REQUESTED', () => pm.expect(body.status).to.eql('REQUESTED'));",
+                  "console.log('trip_id:', body.trip_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Trip Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}"]
+            },
+            "description": "Fetch full trip details by ID.\n\n**Run this after a 5s delay following `Request Trip` to see `DRIVER_ASSIGNED` status.**\n\nTrip statuses: `REQUESTED` → `MATCHING` → `DRIVER_ASSIGNED` → `STARTED` → `COMPLETED`"
+          },
+          "response": [
+            {
+              "name": "200 OK — Driver Assigned",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"requested_at\": \"2026-02-28T10:00:00Z\",\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"trip not found\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Trip fields present', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.include.all.keys('id','rider_id','pickup_lat','pickup_lng','drop_lat','drop_lng','status','created_at');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign Driver (Manual)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driver_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/assign",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}", "assign"]
+            },
+            "description": "Manually assign a driver to a trip. Only valid when status is `REQUESTED` or `MATCHING`.\n\nNormally the Kafka matcher does this automatically. Use this for manual override or testing when no nearby driver is found."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\"\n}"
+            },
+            {
+              "name": "400 Invalid State",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"trip not found or invalid state for assignment\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status DRIVER_ASSIGNED', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('DRIVER_ASSIGNED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start Trip",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}", "start"]
+            },
+            "description": "Move a trip from `DRIVER_ASSIGNED` → `STARTED`. Sets `started_at` timestamp.\n\nRequires trip to be in `DRIVER_ASSIGNED` state."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"STARTED\",\n  \"started_at\": \"2026-02-28T10:05:00Z\"\n}"
+            },
+            {
+              "name": "400 Wrong State",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"trip not found or not in DRIVER_ASSIGNED state\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status STARTED', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('STARTED');",
+                  "  pm.expect(body.started_at).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "End Trip",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"distanceKm\": 10.5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/end",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}", "end"]
+            },
+            "description": "Complete a trip. Calculates fare and publishes `trip.completed` Kafka event.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km\n\n**distanceKm** is optional — if omitted, distance is auto-calculated using the Haversine formula from pickup/drop coordinates.\n\n| Distance | Fare   |\n|----------|--------|\n| 4.5 km   | ₹104   |\n| 10 km    | ₹170   |\n| 25.5 km  | ₹356   |"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"fare\": 176,\n  \"completed_at\": \"2026-02-28T10:25:00Z\"\n}"
+            },
+            {
+              "name": "400 Wrong State",
+              "status": "Bad Request",
+              "code": 400,
+              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "body": "{ \"error\": \"trip not found or not in STARTED state\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status COMPLETED', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('COMPLETED');",
+                  "  pm.expect(body.fare).to.be.a('number').and.above(0);",
+                  "  pm.expect(body.completed_at).to.be.a('string');",
+                  "  console.log('Final fare: ₹' + body.fare);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "WebSocket",
+      "item": [
+        {
+          "name": "Trip Live Tracking (info)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/ws/trips/{{trip_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["ws", "trips", "{{trip_id}}"]
+            },
+            "description": "**WebSocket endpoint** — cannot be tested via regular HTTP in Postman.\n\nUse one of these tools instead:\n\n```bash\n# wscat (npm install -g wscat)\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Message format received:**\n```json\n{\n  \"trip_id\": \"t1r2i3p4-...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1771439400\n}\n```\n\nMessages are pushed whenever the driver's location is broadcast during an active trip."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
