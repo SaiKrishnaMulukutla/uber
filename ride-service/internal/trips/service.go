@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"time"
@@ -168,6 +169,72 @@ func (s *Service) End(ctx context.Context, tripID string, distKm *float64) (*Tri
 		if err := s.kafka.Publish(context.Background(), kafka.TopicTripCompleted, tripID, ev); err != nil {
 			log.Printf("[trips] failed to publish trip.completed: %v", err)
 		}
+		// Restore driver status and GEO pool after trip ends.
+		if driverID != "" {
+			if _, dbErr := s.db.Exec(context.Background(),
+				`UPDATE drivers SET status='available' WHERE id=$1`, driverID); dbErr != nil {
+				log.Printf("[trips] failed to reset driver status for %s: %v", driverID, dbErr)
+			}
+			if lat, lng, locErr := s.redis.GetDriverLocation(context.Background(), driverID); locErr == nil {
+				_ = s.redis.SetDriverLocation(context.Background(), driverID, lat, lng)
+			}
+		}
+	}()
+
+	return s.GetByID(ctx, tripID)
+}
+
+// Cancel transitions a REQUESTED, MATCHING, or DRIVER_ASSIGNED trip to CANCELLED.
+// If a driver was assigned, their DB status is restored to "available" and they
+// are re-added to the Redis GEO pool using their last-saved location.
+func (s *Service) Cancel(ctx context.Context, tripID, reason string) (*Trip, error) {
+	trip, err := s.GetByID(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.Status != StatusRequested && trip.Status != StatusMatching && trip.Status != StatusDriverAssigned {
+		return nil, fmt.Errorf("cannot cancel trip in status %s", trip.Status)
+	}
+
+	now := time.Now()
+	tag, err := s.db.Exec(ctx,
+		`UPDATE trips SET status=$1, completed_at=$2 WHERE id=$3 AND status IN ($4,$5,$6)`,
+		StatusCancelled, now, tripID, StatusRequested, StatusMatching, StatusDriverAssigned)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, errors.New("trip already transitioned or not found")
+	}
+
+	driverID := ""
+	if trip.DriverID != nil {
+		driverID = *trip.DriverID
+	}
+
+	if driverID != "" {
+		if _, dbErr := s.db.Exec(ctx,
+			`UPDATE drivers SET status='available' WHERE id=$1`, driverID); dbErr != nil {
+			log.Printf("[trips] cancel: failed to reset driver status for %s: %v", driverID, dbErr)
+		}
+		if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
+			_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+		} else {
+			log.Printf("[trips] cancel: no saved location for driver %s, cannot restore GEO", driverID)
+		}
+	}
+
+	go func() {
+		ev := events.TripCancelledEvent{
+			TripID:      tripID,
+			DriverID:    driverID,
+			RiderID:     trip.RiderID,
+			Reason:      reason,
+			CancelledAt: now.Format(time.RFC3339),
+		}
+		if err := s.kafka.Publish(context.Background(), kafka.TopicTripCancelled, tripID, ev); err != nil {
+			log.Printf("[trips] failed to publish trip.cancelled: %v", err)
+		}
 	}()
 
 	return s.GetByID(ctx, tripID)
@@ -186,6 +253,11 @@ func (s *Service) StartDriverAssignedConsumer(ctx context.Context) {
 			`UPDATE trips SET driver_id=$1, status=$2
 			 WHERE id=$3 AND status IN ($4,$5)`,
 			ev.DriverID, StatusDriverAssigned, ev.TripID, StatusRequested, StatusMatching)
+		if err != nil {
+			return err
+		}
+		// Sync driver status to busy in DB.
+		_, err = s.db.Exec(ctx, `UPDATE drivers SET status='busy' WHERE id=$1`, ev.DriverID)
 		return err
 	})
 }
