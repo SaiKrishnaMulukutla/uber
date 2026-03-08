@@ -32,3 +32,7 @@ func ValidatePassword(password string) bool {
 func ValidateCoordinates(lat, lng float64) bool {
 	return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
 }
+
+func ValidateDriverStatus(s string) bool {
+	return s == "available" || s == "busy" || s == "offline"
+}
