@@ -60,6 +60,7 @@ func main() {
 		kafka.TopicRideRequested,
 		kafka.TopicDriverAssigned,
 		kafka.TopicTripCompleted,
+		kafka.TopicTripCancelled,
 	); err != nil {
 		log.Fatal(err)
 	}
