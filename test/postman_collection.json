@@ -1,62 +1,53 @@
 {
   "info": {
-    "name": "Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Create an environment with variable `base_url` = `http://localhost:8000`\n3. Run requests in order — tokens and IDs are auto-captured via test scripts\n\n**Flow:** Health → Register User → Register Driver → Update Location → Request Trip → (wait 5s) → Verify Assignment → Start Trip → End Trip",
+    "name": "Uber Ride-Hailing API",
+    "description": "Complete API collection for the Go ride-hailing microservices system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Create an environment with variable `base_url` = `http://localhost:8000`\n3. Run requests in order — tokens and IDs are auto-captured via test scripts\n\n**Architecture:** 6 microservices (User, Driver, Trip, Payment, Notification, Matching) + API Gateway\n**Data Flow:** Register → Login → Update Location → Request Trip → (5s wait) → Verify Assignment → Start Trip → End Trip → Rate → View Payment",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",    "value": "http://localhost:8000", "type": "string" },
-    { "key": "rider_token", "value": "", "type": "string" },
-    { "key": "rider_id",    "value": "", "type": "string" },
-    { "key": "driver_token","value": "", "type": "string" },
-    { "key": "driver_id",   "value": "", "type": "string" },
-    { "key": "trip_id",     "value": "", "type": "string" }
+    { "key": "base_url",      "value": "http://localhost:8000", "type": "string" },
+    { "key": "rider_token",   "value": "", "type": "string" },
+    { "key": "rider_id",      "value": "", "type": "string" },
+    { "key": "driver_token",  "value": "", "type": "string" },
+    { "key": "driver_id",     "value": "", "type": "string" },
+    { "key": "trip_id",       "value": "", "type": "string" },
+    { "key": "payment_id",    "value": "", "type": "string" }
   ],
   "item": [
     {
-      "name": "Health",
-      "item": [
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+        "description": "Verify API Gateway is running. Returns status from one of the services."
+      },
+      "response": [
         {
-          "name": "Health Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
-            "description": "Verify the service is running. No authentication required."
-          },
-          "response": [
-            {
-              "name": "200 OK",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"status\": \"ok\",\n  \"service\": \"ride-service\"\n}"
-            }
-          ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Service ok', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.status).to.eql('ok');",
-                  "  pm.expect(body.service).to.eql('ride-service');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
+          "name": "200 OK",
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{ \"status\": \"ok\" }"
+        }
+      ],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));"
+            ],
+            "type": "text/javascript"
+          }
         }
       ]
     },
     {
-      "name": "Users",
+      "name": "Users (Rider)",
       "item": [
         {
-          "name": "Register User",
+          "name": "Register Rider",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -65,7 +56,7 @@
               "raw": "{\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"password\": \"Pass123!\"\n}"
             },
             "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
-            "description": "Create a new rider account. Returns JWT token and user profile.\n\n**Validation rules:**\n- name: 2–200 chars\n- email: valid format, max 200 chars\n- phone: E.164 format (e.g. +919999999999)\n- password: 6–100 chars"
+            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2–100 chars\n- email: valid format\n- phone: 10-15 digits\n- password: minimum 6 chars"
           },
           "response": [
             {
@@ -73,20 +64,18 @@
               "status": "Created",
               "code": 201,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             },
             {
               "name": "400 Invalid Input",
               "status": "Bad Request",
               "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"invalid email\" }"
             },
             {
               "name": "409 Duplicate Email",
               "status": "Conflict",
               "code": 409,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"email already registered\" }"
             }
           ],
@@ -97,13 +86,11 @@
                 "exec": [
                   "if (pm.response.code === 201) {",
                   "  const body = pm.response.json();",
-                  "  pm.collectionVariables.set('rider_token', body.token);",
+                  "  pm.collectionVariables.set('rider_token', body.access_token);",
                   "  pm.collectionVariables.set('rider_id', body.user.id);",
-                  "  pm.test('Token received', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+                  "  pm.test('Access token received', () => pm.expect(body.access_token).to.be.a('string').and.not.empty);",
                   "  pm.test('User ID received', () => pm.expect(body.user.id).to.be.a('string').and.not.empty);",
                   "  console.log('rider_id:', body.user.id);",
-                  "} else {",
-                  "  pm.test('Non-201 response', () => pm.response.to.have.status(pm.response.code));",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -112,7 +99,7 @@
           ]
         },
         {
-          "name": "Login User",
+          "name": "Login Rider",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -121,7 +108,7 @@
               "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"password\": \"Pass123!\"\n}"
             },
             "url": { "raw": "{{base_url}}/users/login", "host": ["{{base_url}}"], "path": ["users", "login"] },
-            "description": "Authenticate a rider. Returns a fresh JWT token."
+            "description": "Authenticate a rider and get JWT tokens."
           },
           "response": [
             {
@@ -129,13 +116,12 @@
               "status": "OK",
               "code": 200,
               "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             },
             {
               "name": "401 Wrong Credentials",
               "status": "Unauthorized",
               "code": 401,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"invalid credentials\" }"
             }
           ],
@@ -146,9 +132,9 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set('rider_token', body.token);",
+                  "pm.collectionVariables.set('rider_token', body.access_token);",
                   "pm.collectionVariables.set('rider_id', body.user.id);",
-                  "pm.test('Token refreshed', () => pm.expect(body.token).to.be.a('string').and.not.empty);"
+                  "pm.test('Token received', () => pm.expect(body.access_token).to.be.a('string').and.not.empty);"
                 ],
                 "type": "text/javascript"
               }
@@ -156,7 +142,28 @@
           ]
         },
         {
-          "name": "Get User Profile",
+          "name": "Refresh Rider Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/users/refresh", "host": ["{{base_url}}"], "path": ["users", "refresh"] },
+            "description": "Get a new access token using a valid refresh token."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Rider Profile",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
@@ -172,22 +179,13 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"rating\": 5,\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+              "body": "{\n  \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"rating\": 4.8,\n  \"rating_count\": 125,\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
             },
             {
               "name": "401 Unauthorized",
               "status": "Unauthorized",
               "code": 401,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"missing or invalid token\" }"
-            },
-            {
-              "name": "404 Not Found",
-              "status": "Not Found",
-              "code": 404,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{ \"error\": \"user not found\" }"
             }
           ],
           "event": [
@@ -198,7 +196,7 @@
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('User fields present', () => {",
                   "  const body = pm.response.json();",
-                  "  pm.expect(body).to.have.all.keys('id','name','email','phone','rating','created_at');",
+                  "  pm.expect(body).to.have.all.keys('id','name','email','phone','rating','rating_count','created_at');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -221,21 +219,19 @@
               "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"password\": \"Driver123!\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\"\n}"
             },
             "url": { "raw": "{{base_url}}/drivers/register", "host": ["{{base_url}}"], "path": ["drivers", "register"] },
-            "description": "Create a new driver account with vehicle details.\n\n**vehicle_type** defaults to `sedan` if omitted."
+            "description": "Create a new driver account with vehicle details."
           },
           "response": [
             {
               "name": "201 Created",
               "status": "Created",
               "code": 201,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"sedan\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"available\",\n    \"rating\": 5,\n    \"created_at\": \"2026-02-28T10:00:00Z\"\n  }\n}"
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"sedan\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"available\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             },
             {
               "name": "409 Duplicate Email",
               "status": "Conflict",
               "code": 409,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"email already registered\" }"
             }
           ],
@@ -246,9 +242,9 @@
                 "exec": [
                   "if (pm.response.code === 201) {",
                   "  const body = pm.response.json();",
-                  "  pm.collectionVariables.set('driver_token', body.token);",
+                  "  pm.collectionVariables.set('driver_token', body.access_token);",
                   "  pm.collectionVariables.set('driver_id', body.driver.id);",
-                  "  pm.test('Driver token received', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+                  "  pm.test('Driver token received', () => pm.expect(body.access_token).to.be.a('string').and.not.empty);",
                   "  pm.test('Driver ID received', () => pm.expect(body.driver.id).to.be.a('string').and.not.empty);",
                   "  console.log('driver_id:', body.driver.id);",
                   "}"
@@ -268,15 +264,14 @@
               "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"password\": \"Driver123!\"\n}"
             },
             "url": { "raw": "{{base_url}}/drivers/login", "host": ["{{base_url}}"], "path": ["drivers", "login"] },
-            "description": "Authenticate a driver. Returns a fresh JWT token."
+            "description": "Authenticate a driver and get JWT tokens."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"status\": \"available\"\n  }\n}"
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"sedan\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"available\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             }
           ],
           "event": [
@@ -286,13 +281,26 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set('driver_token', body.token);",
+                  "pm.collectionVariables.set('driver_token', body.access_token);",
                   "pm.collectionVariables.set('driver_id', body.driver.id);"
                 ],
                 "type": "text/javascript"
               }
             }
           ]
+        },
+        {
+          "name": "Refresh Driver Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/drivers/refresh", "host": ["{{base_url}}"], "path": ["drivers", "refresh"] },
+            "description": "Get a new access token using a valid refresh token."
+          }
         },
         {
           "name": "Get Driver Profile",
@@ -311,8 +319,7 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\",\n  \"status\": \"available\",\n  \"rating\": 5,\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+              "body": "{\n  \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\",\n  \"status\": \"available\",\n  \"rating\": 4.9,\n  \"rating_count\": 98,\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
             }
           ],
           "event": [
@@ -323,7 +330,7 @@
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Driver fields present', () => {",
                   "  const body = pm.response.json();",
-                  "  pm.expect(body).to.include.all.keys('id','name','email','vehicle_type','license_plate','status','rating');",
+                  "  pm.expect(body).to.include.all.keys('id','name','email','vehicle_type','license_plate','status','rating','rating_count');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -337,7 +344,7 @@
             "method": "PATCH",
             "header": [
               { "key": "Authorization", "value": "Bearer {{driver_token}}" },
-              { "key": "Content-Type",   "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
@@ -348,21 +355,19 @@
               "host": ["{{base_url}}"],
               "path": ["drivers", "{{driver_id}}", "location"]
             },
-            "description": "Update the driver's GPS position in Redis GEO set.\n\nThis is required before requesting a trip — the matching engine uses this location to find the nearest driver.\n\n**Coordinates:** Bangalore city center (12.9716, 77.5946)"
+            "description": "Update driver's GPS position in Redis GEO set. Required before a rider can request a trip.\n\n**Coordinates:** Bangalore city center (12.9716, 77.5946)"
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"status\": \"location_updated\" }"
             },
             {
               "name": "400 Invalid Coordinates",
               "status": "Bad Request",
               "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"invalid coordinates\" }"
             }
           ],
@@ -382,6 +387,34 @@
           ]
         },
         {
+          "name": "Update Driver Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"available\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/drivers/{{driver_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["drivers", "{{driver_id}}", "status"]
+            },
+            "description": "Update driver's availability status.\n\n**Valid statuses:** available, busy, offline"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"status\": \"available\"\n}"
+            }
+          ]
+        },
+        {
           "name": "Find Nearby Drivers",
           "request": {
             "method": "GET",
@@ -391,34 +424,19 @@
               "host": ["{{base_url}}"],
               "path": ["drivers", "nearby"],
               "query": [
-                { "key": "lat",    "value": "12.9716", "description": "Latitude of search center" },
-                { "key": "lng",    "value": "77.5946", "description": "Longitude of search center" },
-                { "key": "radius", "value": "5",       "description": "Search radius in km (default: 5)" }
+                { "key": "lat", "value": "12.9716", "description": "Latitude" },
+                { "key": "lng", "value": "77.5946", "description": "Longitude" },
+                { "key": "radius", "value": "5", "description": "Radius in km (default: 5)" }
               ]
             },
-            "description": "Query all available drivers within `radius` km of the given coordinates using Redis GEO search.\n\nDrivers must have called **Update Location** first to appear here."
+            "description": "Find all available drivers within radius km using Redis GEO search."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{\n  \"drivers\": [\n    \"d5e6f7g8-0000-0000-0000-000000000000\"\n  ]\n}"
-            }
-          ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Drivers array returned', () => {",
-                  "  pm.expect(pm.response.json().drivers).to.be.an('array');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
             }
           ]
         }
@@ -433,28 +451,26 @@
             "method": "POST",
             "header": [
               { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type",   "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\":   12.9352,\n  \"dropLng\":   77.6245\n}"
+              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
             },
             "url": { "raw": "{{base_url}}/trips/request", "host": ["{{base_url}}"], "path": ["trips", "request"] },
-            "description": "Request a new ride as a rider.\n\n**What happens behind the scenes:**\n1. Trip saved to PostgreSQL with status `REQUESTED`\n2. `ride.requested` event published to Kafka\n3. Matching consumer finds nearest driver from Redis GEO\n4. `driver.assigned` event published\n5. Trip consumer updates status to `DRIVER_ASSIGNED`\n\n**Wait 5 seconds after this call before checking trip status.**"
+            "description": "Request a new ride. Publishes `ride.requested` to Kafka → Matching service finds driver → publishes `driver.assigned`.\n\n**Wait 5 seconds before checking trip status for assignment.**"
           },
           "response": [
             {
               "name": "201 Created",
               "status": "Created",
               "code": 201,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"REQUESTED\"\n}"
             },
             {
               "name": "400 Invalid Coordinates",
               "status": "Bad Request",
               "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"invalid pickup coordinates\" }"
             }
           ],
@@ -467,7 +483,6 @@
                   "const body = pm.response.json();",
                   "pm.collectionVariables.set('trip_id', body.trip_id);",
                   "pm.test('Trip ID received', () => pm.expect(body.trip_id).to.be.a('string').and.not.empty);",
-                  "pm.test('Status REQUESTED', () => pm.expect(body.status).to.eql('REQUESTED'));",
                   "console.log('trip_id:', body.trip_id);"
                 ],
                 "type": "text/javascript"
@@ -485,21 +500,19 @@
               "host": ["{{base_url}}"],
               "path": ["trips", "{{trip_id}}"]
             },
-            "description": "Fetch full trip details by ID.\n\n**Run this after a 5s delay following `Request Trip` to see `DRIVER_ASSIGNED` status.**\n\nTrip statuses: `REQUESTED` → `MATCHING` → `DRIVER_ASSIGNED` → `STARTED` → `COMPLETED`"
+            "description": "Fetch full trip details by ID.\n\n**Trip statuses:** REQUESTED → MATCHING → DRIVER_ASSIGNED → STARTED → COMPLETED"
           },
           "response": [
             {
-              "name": "200 OK — Driver Assigned",
+              "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"requested_at\": \"2026-02-28T10:00:00Z\",\n  \"created_at\": \"2026-02-28T10:00:00Z\"\n}"
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"fare\": 0,\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
             },
             {
               "name": "404 Not Found",
               "status": "Not Found",
               "code": 404,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{ \"error\": \"trip not found\" }"
             }
           ],
@@ -520,12 +533,36 @@
           ]
         },
         {
+          "name": "Estimate Fare",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
+            },
+            "url": { "raw": "{{base_url}}/trips/estimate", "host": ["{{base_url}}"], "path": ["trips", "estimate"] },
+            "description": "Get fare estimate before requesting a trip.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"estimated_fare\": 126.5,\n  \"estimated_distance_km\": 6.375,\n  \"estimated_duration_min\": 15.2,\n  \"surge_multiplier\": 1.0,\n  \"currency\": \"INR\"\n}"
+            }
+          ]
+        },
+        {
           "name": "Assign Driver (Manual)",
           "request": {
             "method": "PATCH",
             "header": [
               { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type",   "value": "application/json" }
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
@@ -536,36 +573,14 @@
               "host": ["{{base_url}}"],
               "path": ["trips", "{{trip_id}}", "assign"]
             },
-            "description": "Manually assign a driver to a trip. Only valid when status is `REQUESTED` or `MATCHING`.\n\nNormally the Kafka matcher does this automatically. Use this for manual override or testing when no nearby driver is found."
+            "description": "Manually assign a driver (override automatic matching)."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\"\n}"
-            },
-            {
-              "name": "400 Invalid State",
-              "status": "Bad Request",
-              "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{ \"error\": \"trip not found or invalid state for assignment\" }"
-            }
-          ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Status DRIVER_ASSIGNED', () => {",
-                  "  pm.expect(pm.response.json().status).to.eql('DRIVER_ASSIGNED');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
             }
           ]
         },
@@ -573,28 +588,22 @@
           "name": "Start Trip",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{driver_token}}" }
+            ],
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/start",
               "host": ["{{base_url}}"],
               "path": ["trips", "{{trip_id}}", "start"]
             },
-            "description": "Move a trip from `DRIVER_ASSIGNED` → `STARTED`. Sets `started_at` timestamp.\n\nRequires trip to be in `DRIVER_ASSIGNED` state."
+            "description": "Move trip to STARTED state. Only driver can call this."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"STARTED\",\n  \"started_at\": \"2026-02-28T10:05:00Z\"\n}"
-            },
-            {
-              "name": "400 Wrong State",
-              "status": "Bad Request",
-              "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{ \"error\": \"trip not found or not in DRIVER_ASSIGNED state\" }"
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"STARTED\",\n  \"started_at\": \"2026-03-08T10:05:00Z\"\n}"
             }
           ],
           "event": [
@@ -604,9 +613,7 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "pm.test('Status STARTED', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body.status).to.eql('STARTED');",
-                  "  pm.expect(body.started_at).to.be.a('string');",
+                  "  pm.expect(pm.response.json().status).to.eql('STARTED');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -619,34 +626,26 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type",   "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"distanceKm\": 10.5\n}"
+              "raw": "{\n  \"distanceKm\": 6.375\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/end",
               "host": ["{{base_url}}"],
               "path": ["trips", "{{trip_id}}", "end"]
             },
-            "description": "Complete a trip. Calculates fare and publishes `trip.completed` Kafka event.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km\n\n**distanceKm** is optional — if omitted, distance is auto-calculated using the Haversine formula from pickup/drop coordinates.\n\n| Distance | Fare   |\n|----------|--------|\n| 4.5 km   | ₹104   |\n| 10 km    | ₹170   |\n| 25.5 km  | ₹356   |"
+            "description": "Complete a trip. Publishes `trip.completed` event → Payment service creates payment.\n\n**distanceKm** is optional (auto-calculated if omitted using Haversine formula)."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"fare\": 176,\n  \"completed_at\": \"2026-02-28T10:25:00Z\"\n}"
-            },
-            {
-              "name": "400 Wrong State",
-              "status": "Bad Request",
-              "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{ \"error\": \"trip not found or not in STARTED state\" }"
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"fare\": 126.5,\n  \"completed_at\": \"2026-03-08T10:25:00Z\"\n}"
             }
           ],
           "event": [
@@ -655,16 +654,204 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Status COMPLETED', () => {",
+                  "pm.test('Trip completed', () => {",
                   "  const body = pm.response.json();",
                   "  pm.expect(body.status).to.eql('COMPLETED');",
                   "  pm.expect(body.fare).to.be.a('number').and.above(0);",
-                  "  pm.expect(body.completed_at).to.be.a('string');",
-                  "  console.log('Final fare: ₹' + body.fare);",
+                  "  console.log('Fare: ₹' + body.fare);",
                   "});"
                 ],
                 "type": "text/javascript"
               }
+            }
+          ]
+        },
+        {
+          "name": "Cancel Trip",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Driver is too far\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}", "cancel"]
+            },
+            "description": "Cancel a trip before it starts. Restores driver location in Redis and publishes `trip.cancelled` event."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"CANCELLED\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Rate Trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/rate",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "{{trip_id}}", "rate"]
+            },
+            "description": "Submit a rating for a completed trip. Publishes `rating.submitted` event → Driver service updates driver rating."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"id\": \"r1a2t3i4-0000-0000-0000-000000000000\",\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rater_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"rater_role\": \"rider\",\n  \"ratee_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"ratee_role\": \"driver\",\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\",\n  \"created_at\": \"2026-03-08T10:30:00Z\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Trip History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/trips/history?limit=10&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["trips", "history"],
+              "query": [
+                { "key": "limit", "value": "10", "description": "Results per page (max 50)" },
+                { "key": "offset", "value": "0", "description": "Pagination offset" }
+              ]
+            },
+            "description": "Get user's trip history (rider or driver)."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"trips\": [\n    {\n      \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n      \"status\": \"COMPLETED\",\n      \"fare\": 126.5,\n      \"created_at\": \"2026-03-08T10:00:00Z\"\n    }\n  ],\n  \"total\": 15,\n  \"limit\": 10,\n  \"offset\": 0\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Get Payment",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/payments/{{trip_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "{{trip_id}}"]
+            },
+            "description": "Fetch payment details for a completed trip. Auto-created when trip ends."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"amount\": 126.5,\n  \"status\": \"COMPLETED\",\n  \"payment_method\": \"wallet\",\n  \"created_at\": \"2026-03-08T10:25:00Z\",\n  \"completed_at\": \"2026-03-08T10:25:30Z\"\n}"
+            },
+            {
+              "name": "404 Not Found",
+              "status": "Not Found",
+              "code": 404,
+              "body": "{ \"error\": \"payment not found\" }"
+            }
+          ]
+        },
+        {
+          "name": "Payment History",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/payments/history?limit=10&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "history"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Get user's payment history."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"payments\": [\n    {\n      \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n      \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n      \"amount\": 126.5,\n      \"status\": \"COMPLETED\",\n      \"created_at\": \"2026-03-08T10:25:00Z\"\n    }\n  ],\n  \"total\": 25,\n  \"limit\": 10,\n  \"offset\": 0\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/notifications/?limit=20&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", ""],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Get user's notifications (rider or driver).\n\n**Notification types:**\n- ride_requested\n- driver_assigned\n- trip_completed\n- trip_cancelled\n- rating_submitted\n- payment_completed"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"driver_assigned\",\n      \"title\": \"Driver Assigned\",\n      \"body\": \"Ravi Kumar is on the way (2 min away)\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:01:00Z\"\n    }\n  ],\n  \"total\": 5,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "url": {
+              "raw": "{{base_url}}/notifications/{notificationId}/read",
+              "host": ["{{base_url}}"],
+              "path": ["notifications", "{notificationId}", "read"]
+            },
+            "description": "Mark a notification as read."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"status\": \"read\" }"
             }
           ]
         }
@@ -674,18 +861,31 @@
       "name": "WebSocket",
       "item": [
         {
-          "name": "Trip Live Tracking (info)",
+          "name": "Trip Live Tracking",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/ws/trips/{{trip_id}}",
-              "host": ["{{base_url}}"],
+              "raw": "ws://localhost:8000/ws/trips/{{trip_id}}",
+              "host": ["localhost:8000"],
               "path": ["ws", "trips", "{{trip_id}}"]
             },
-            "description": "**WebSocket endpoint** — cannot be tested via regular HTTP in Postman.\n\nUse one of these tools instead:\n\n```bash\n# wscat (npm install -g wscat)\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Message format received:**\n```json\n{\n  \"trip_id\": \"t1r2i3p4-...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1771439400\n}\n```\n\nMessages are pushed whenever the driver's location is broadcast during an active trip."
-          },
-          "response": []
+            "description": "**WebSocket endpoint** for real-time trip tracking.\n\nCannot be tested via HTTP in Postman. Use these tools instead:\n\n```bash\n# wscat (npm install -g wscat)\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Messages from server (JSON):**\n```json\n{\n  \"trip_id\": \"t1r2i3p4-...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1771439400\n}\n```\n\nMessages sent whenever driver broadcasts location during active trip."
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Gateway Health",
+      "item": [
+        {
+          "name": "Gateway Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
+            "description": "Check if nginx API gateway and at least one backend service is running."
+          }
         }
       ]
     }

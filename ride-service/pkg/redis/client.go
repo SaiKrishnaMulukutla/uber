@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -59,6 +61,35 @@ func (c *Client) GetNearbyDrivers(ctx context.Context, lat, lng, radiusKm float6
 // RemoveDriverLocation removes a driver from the GEO set (e.g. when assigned).
 func (c *Client) RemoveDriverLocation(ctx context.Context, driverID string) error {
 	return c.rdb.ZRem(ctx, "driver:locations", driverID).Err()
+}
+
+// SaveDriverLocation stores a driver's last-known lat/lng as a plain key so it
+// can be restored to the GEO pool after trip completion or cancellation.
+func (c *Client) SaveDriverLocation(ctx context.Context, driverID string, lat, lng float64) error {
+	key := fmt.Sprintf("driver:loc:%s", driverID)
+	return c.rdb.Set(ctx, key, fmt.Sprintf("%f,%f", lat, lng), 0).Err()
+}
+
+// GetDriverLocation retrieves the last-saved lat/lng for a driver.
+func (c *Client) GetDriverLocation(ctx context.Context, driverID string) (float64, float64, error) {
+	key := fmt.Sprintf("driver:loc:%s", driverID)
+	val, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.SplitN(val, ",", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid location format for driver %s", driverID)
+	}
+	lat, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	lng, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	return lat, lng, nil
 }
 
 // CacheTrip stores trip data in a hash with TTL.

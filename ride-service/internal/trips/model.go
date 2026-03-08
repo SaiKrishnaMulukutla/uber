@@ -47,3 +47,8 @@ type EndRequest struct {
 	DistanceKm      *float64 `json:"distanceKm,omitempty"`
 	DurationSeconds *int64   `json:"durationSeconds,omitempty"`
 }
+
+// CancelRequest is the optional body for PATCH /trips/:id/cancel.
+type CancelRequest struct {
+	Reason string `json:"reason,omitempty"`
+}
