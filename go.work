@@ -1,0 +1,11 @@
+go 1.21
+
+use (
+	./driver-service
+	./matching-service
+	./notification-service
+	./payment-service
+	./shared
+	./trip-service
+	./user-service
+)

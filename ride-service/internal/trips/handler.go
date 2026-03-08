@@ -24,6 +24,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/request", h.Request)
 	r.Get("/{id}", h.GetByID)
 	r.Patch("/{id}/assign", h.Assign)
+	r.Patch("/{id}/cancel", h.Cancel)
 	r.Patch("/{id}/start", h.Start)
 	r.Patch("/{id}/end", h.End)
 
@@ -89,6 +90,17 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	var req CancelRequest
+	json.NewDecoder(r.Body).Decode(&req) // body is optional
+	t, err := h.svc.Cancel(r.Context(), chi.URLParam(r, "id"), req.Reason)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
