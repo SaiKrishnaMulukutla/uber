@@ -8,11 +8,12 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_DB: postgres
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
@@ -48,19 +49,44 @@ services:
     volumes:
       - kafka_data:/var/lib/kafka/data
 
-  ride-service:
+  user-service:
     build:
-      context: ../ride-service
-    container_name: ride-service
+      context: ../
+      dockerfile: user-service/Dockerfile
+    container_name: user-service
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/users_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8081"
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  driver-service:
+    build:
+      context: ../
+      dockerfile: driver-service/Dockerfile
+    container_name: driver-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/drivers_db?sslmode=disable
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
-      PORT: "8080"
+      PORT: "8082"
     ports:
-      - "8080:8080"
+      - "8082:8082"
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,7 +95,97 @@ services:
       kafka:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  trip-service:
+    build:
+      context: ../
+      dockerfile: trip-service/Dockerfile
+    container_name: trip-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/trips_db?sslmode=disable
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8083"
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  matching-service:
+    build:
+      context: ../
+      dockerfile: matching-service/Dockerfile
+    container_name: matching-service
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      redis:
+        condition: service_started
+      kafka:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: ../
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/notifications_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8084"
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  payment-service:
+    build:
+      context: ../
+      dockerfile: payment-service/Dockerfile
+    container_name: payment-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/payments_db?sslmode=disable
+      KAFKA_BROKERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8085"
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8085/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -82,7 +198,11 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - ride-service
+      - user-service
+      - driver-service
+      - trip-service
+      - notification-service
+      - payment-service
 
 volumes:
   postgres_data:

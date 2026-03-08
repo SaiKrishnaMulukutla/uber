@@ -43,3 +43,8 @@ type AuthResponse struct {
 	Token  string  `json:"token"`
 	Driver *Driver `json:"driver,omitempty"`
 }
+
+// StatusUpdate is the body for PATCH /drivers/:id/status.
+type StatusUpdate struct {
+	Status string `json:"status"` // "available" | "busy" | "offline"
+}
