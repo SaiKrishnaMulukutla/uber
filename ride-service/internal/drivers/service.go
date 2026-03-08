@@ -3,6 +3,7 @@ package drivers
 import (
 	"context"
 	"errors"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -110,9 +111,35 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Driver, error) {
 	return &d, nil
 }
 
-// UpdateLocation stores the driver's current position in Redis.
+// UpdateLocation stores the driver's current position in Redis and saves a
+// backup key so the position can be restored after assignment or cancellation.
 func (s *Service) UpdateLocation(ctx context.Context, driverID string, lat, lng float64) error {
+	if err := s.redis.SaveDriverLocation(ctx, driverID, lat, lng); err != nil {
+		log.Printf("[drivers] failed to save location backup for %s: %v", driverID, err)
+	}
 	return s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+}
+
+// UpdateStatus sets a driver's status in Postgres and syncs the Redis GEO pool:
+// "available" restores the driver using their last-saved location;
+// "busy" or "offline" removes them from the matchable pool.
+func (s *Service) UpdateStatus(ctx context.Context, driverID, status string) (*Driver, error) {
+	tag, err := s.db.Exec(ctx, `UPDATE drivers SET status=$1 WHERE id=$2`, status, driverID)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, errors.New("driver not found")
+	}
+	switch status {
+	case "available":
+		if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
+			_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+		}
+	default:
+		_ = s.redis.RemoveDriverLocation(ctx, driverID)
+	}
+	return s.GetByID(ctx, driverID)
 }
 
 // GetNearby returns driver IDs within radiusKm of the given point.
