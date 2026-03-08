@@ -30,3 +30,12 @@ type TripCompletedEvent struct {
 	CompletedAt     string  `json:"completed_at"`
 	DurationSeconds int64   `json:"duration_seconds"`
 }
+
+// TripCancelledEvent is published to trip.cancelled.
+type TripCancelledEvent struct {
+	TripID      string `json:"trip_id"`
+	DriverID    string `json:"driver_id,omitempty"`
+	RiderID     string `json:"rider_id"`
+	Reason      string `json:"reason,omitempty"`
+	CancelledAt string `json:"cancelled_at"`
+}

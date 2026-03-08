@@ -15,6 +15,7 @@ const (
 	TopicRideRequested  = "ride.requested"
 	TopicDriverAssigned = "driver.assigned"
 	TopicTripCompleted  = "trip.completed"
+	TopicTripCancelled  = "trip.cancelled"
 )
 
 // Client wraps Kafka operations.

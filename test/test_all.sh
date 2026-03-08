@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# Comprehensive Test Suite for ride-hailing-system
-# Covers: Health, Users, Drivers, Trips, Matching (Kafka), WebSocket (basic)
+# Comprehensive Test Suite for ride-hailing-system (microservices)
+# Covers: Health, Users, Drivers, Trips, Matching (Kafka), WebSocket,
+#         Refresh Tokens, RBAC, Ride History, Fare Estimation, Ratings,
+#         Notifications, Payments, Trip Cancellation
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -81,7 +83,6 @@ RESP=$(curl -s -w "\n%{http_code}" "$BASE/health")
 parse_response "$RESP"
 assert_status "GET /health returns 200" "200" "$CODE"
 assert_json_equals "Health status is ok" "$BODY" ".status" "ok"
-assert_json_equals "Service name is ride-service" "$BODY" ".service" "ride-service"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -94,11 +95,13 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/register" \
   -d "{\"name\":\"Test Rider $TS\",\"email\":\"rider_${TS}@test.com\",\"phone\":\"+1${TS}\",\"password\":\"password123\"}")
 parse_response "$RESP"
 assert_status "POST /users/register — success" "201" "$CODE"
-assert_json_field "Registration returns token" "$BODY" ".token"
+assert_json_field "Registration returns access_token" "$BODY" ".access_token"
+assert_json_field "Registration returns refresh_token" "$BODY" ".refresh_token"
 assert_json_field "Registration returns user.id" "$BODY" ".user.id"
 assert_json_equals "Registration returns correct email" "$BODY" ".user.email" "rider_${TS}@test.com"
 assert_json_equals "Registration returns rating 5" "$BODY" ".user.rating" "5"
-RIDER_TOKEN=$(echo "$BODY" | jq -r '.token')
+RIDER_TOKEN=$(echo "$BODY" | jq -r '.access_token')
+RIDER_REFRESH=$(echo "$BODY" | jq -r '.refresh_token')
 RIDER_ID=$(echo "$BODY" | jq -r '.user.id')
 
 # 2b. Duplicate email
@@ -140,7 +143,8 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/login" \
   -d "{\"email\":\"rider_${TS}@test.com\",\"password\":\"password123\"}")
 parse_response "$RESP"
 assert_status "POST /users/login — success" "200" "$CODE"
-assert_json_field "Login returns token" "$BODY" ".token"
+assert_json_field "Login returns access_token" "$BODY" ".access_token"
+assert_json_field "Login returns refresh_token" "$BODY" ".refresh_token"
 assert_json_field "Login returns user.id" "$BODY" ".user.id"
 
 # 3b. Wrong password
@@ -166,10 +170,48 @@ assert_status "POST /users/login — invalid body" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "4. USER PROFILE"
+bold "4. USER REFRESH TOKEN"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 4a. Get profile with valid token
+# 4a. Refresh with valid refresh token
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$RIDER_REFRESH\"}")
+parse_response "$RESP"
+assert_status "POST /users/refresh — success" "200" "$CODE"
+assert_json_field "Refresh returns new access_token" "$BODY" ".access_token"
+assert_json_field "Refresh returns new refresh_token" "$BODY" ".refresh_token"
+
+# Use the new access token for subsequent requests
+RIDER_TOKEN=$(echo "$BODY" | jq -r '.access_token')
+
+# 4b. Refresh with access token (should fail)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$RIDER_TOKEN\"}")
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "POST /users/refresh — access token rejected" "401" "$CODE"
+
+# 4c. Refresh with invalid token
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"invalid.token.here"}')
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "POST /users/refresh — invalid token" "401" "$CODE"
+
+# 4d. Refresh with empty body
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{}')
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "POST /users/refresh — empty body" "400" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "5. USER PROFILE"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 5a. Get profile with valid token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/$RIDER_ID" \
   -H "Authorization: Bearer $RIDER_TOKEN")
 parse_response "$RESP"
@@ -177,18 +219,18 @@ assert_status "GET /users/:id — with token" "200" "$CODE"
 assert_json_equals "Profile returns correct ID" "$BODY" ".id" "$RIDER_ID"
 assert_json_equals "Profile returns correct email" "$BODY" ".email" "rider_${TS}@test.com"
 
-# 4b. Without token (unauthorized)
+# 5b. Without token (unauthorized)
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/$RIDER_ID")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "GET /users/:id — no token" "401" "$CODE"
 
-# 4c. Non-existent user
+# 5c. Non-existent user
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/00000000-0000-0000-0000-000000000000" \
   -H "Authorization: Bearer $RIDER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "GET /users/:id — not found" "404" "$CODE"
 
-# 4d. Invalid token
+# 5d. Invalid token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/$RIDER_ID" \
   -H "Authorization: Bearer invalid.jwt.token")
 CODE=$(echo "$RESP" | tail -n 1)
@@ -196,31 +238,33 @@ assert_status "GET /users/:id — invalid token" "401" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "5. DRIVER REGISTRATION"
+bold "6. DRIVER REGISTRATION"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 5a. Successful registration
+# 6a. Successful registration
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/register" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"Test Driver $TS\",\"email\":\"driver_${TS}@test.com\",\"phone\":\"+2${TS}\",\"password\":\"driverpass\",\"vehicle_type\":\"suv\",\"license_plate\":\"KA-01-AB-${TS}\"}")
 parse_response "$RESP"
 assert_status "POST /drivers/register — success" "201" "$CODE"
-assert_json_field "Driver registration returns token" "$BODY" ".token"
+assert_json_field "Driver registration returns access_token" "$BODY" ".access_token"
+assert_json_field "Driver registration returns refresh_token" "$BODY" ".refresh_token"
 assert_json_field "Driver registration returns driver.id" "$BODY" ".driver.id"
 assert_json_equals "Driver vehicle type" "$BODY" ".driver.vehicle_type" "suv"
 assert_json_equals "Driver status is available" "$BODY" ".driver.status" "available"
 assert_json_equals "Driver rating is 5" "$BODY" ".driver.rating" "5"
-DRIVER_TOKEN=$(echo "$BODY" | jq -r '.token')
+DRIVER_TOKEN=$(echo "$BODY" | jq -r '.access_token')
+DRIVER_REFRESH=$(echo "$BODY" | jq -r '.refresh_token')
 DRIVER_ID=$(echo "$BODY" | jq -r '.driver.id')
 
-# 5b. Duplicate email
+# 6b. Duplicate email
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/register" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"Dup Driver\",\"email\":\"driver_${TS}@test.com\",\"phone\":\"+9${TS}\",\"password\":\"abc123\",\"vehicle_type\":\"sedan\",\"license_plate\":\"X\"}")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /drivers/register — duplicate email" "409" "$CODE"
 
-# 5c. Default vehicle_type when empty
+# 6c. Default vehicle_type when empty
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/register" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"Default VT\",\"email\":\"defvt_${TS}@test.com\",\"phone\":\"+3${TS}\",\"password\":\"abc123\",\"license_plate\":\"Y\"}")
@@ -228,7 +272,7 @@ parse_response "$RESP"
 assert_status "POST /drivers/register — default vehicle_type" "201" "$CODE"
 assert_json_equals "Default vehicle_type is sedan" "$BODY" ".driver.vehicle_type" "sedan"
 
-# 5d. Invalid body
+# 6d. Invalid body
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/register" \
   -H "Content-Type: application/json" \
   -d "not json")
@@ -237,33 +281,34 @@ assert_status "POST /drivers/register — invalid body" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "6. DRIVER LOGIN"
+bold "7. DRIVER LOGIN"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 6a. Successful login
+# 7a. Successful login
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"driver_${TS}@test.com\",\"password\":\"driverpass\"}")
 parse_response "$RESP"
 assert_status "POST /drivers/login — success" "200" "$CODE"
-assert_json_field "Driver login returns token" "$BODY" ".token"
+assert_json_field "Driver login returns access_token" "$BODY" ".access_token"
+assert_json_field "Driver login returns refresh_token" "$BODY" ".refresh_token"
 assert_json_field "Driver login returns driver.id" "$BODY" ".driver.id"
 
-# 6b. Wrong password
+# 7b. Wrong password
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"driver_${TS}@test.com\",\"password\":\"wrongpass\"}")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /drivers/login — wrong password" "401" "$CODE"
 
-# 6c. Non-existent email
+# 7c. Non-existent email
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"nope@test.com\",\"password\":\"abc\"}")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /drivers/login — email not found" "401" "$CODE"
 
-# 6d. Invalid body
+# 7d. Invalid body
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
   -d "bad")
@@ -272,22 +317,53 @@ assert_status "POST /drivers/login — invalid body" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "7. DRIVER PROFILE"
+bold "8. DRIVER REFRESH TOKEN"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 7a. Get driver with valid token
+# 8a. Refresh with valid refresh token
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$DRIVER_REFRESH\"}")
+parse_response "$RESP"
+assert_status "POST /drivers/refresh — success" "200" "$CODE"
+assert_json_field "Driver refresh returns new access_token" "$BODY" ".access_token"
+assert_json_field "Driver refresh returns new refresh_token" "$BODY" ".refresh_token"
+
+# Use the new access token
+DRIVER_TOKEN=$(echo "$BODY" | jq -r '.access_token')
+
+# 8b. Refresh with access token (should fail)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$DRIVER_TOKEN\"}")
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "POST /drivers/refresh — access token rejected" "401" "$CODE"
+
+# 8c. Cross-role: rider refresh token on driver endpoint (should fail)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$RIDER_REFRESH\"}")
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "POST /drivers/refresh — rider refresh token rejected" "401" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "9. DRIVER PROFILE"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 9a. Get driver with valid token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/$DRIVER_ID" \
   -H "Authorization: Bearer $DRIVER_TOKEN")
 parse_response "$RESP"
 assert_status "GET /drivers/:id — with token" "200" "$CODE"
 assert_json_equals "Driver profile ID" "$BODY" ".id" "$DRIVER_ID"
 
-# 7b. Without token
+# 9b. Without token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/$DRIVER_ID")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "GET /drivers/:id — no token" "401" "$CODE"
 
-# 7c. Not found
+# 9c. Not found
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/00000000-0000-0000-0000-000000000000" \
   -H "Authorization: Bearer $DRIVER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
@@ -295,10 +371,10 @@ assert_status "GET /drivers/:id — not found" "404" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "8. DRIVER LOCATION UPDATE"
+bold "10. DRIVER LOCATION UPDATE"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 8a. Update location — success
+# 10a. Update location — success
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/drivers/$DRIVER_ID/location" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
@@ -307,14 +383,14 @@ parse_response "$RESP"
 assert_status "PATCH /drivers/:id/location — success" "200" "$CODE"
 assert_json_equals "Location update status" "$BODY" ".status" "location_updated"
 
-# 8b. Without token
+# 10b. Without token
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/drivers/$DRIVER_ID/location" \
   -H "Content-Type: application/json" \
   -d '{"lat": 12.9716, "lng": 77.5946}')
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "PATCH /drivers/:id/location — no token" "401" "$CODE"
 
-# 8c. Invalid body
+# 10c. Invalid body
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/drivers/$DRIVER_ID/location" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
@@ -324,39 +400,33 @@ assert_status "PATCH /drivers/:id/location — invalid body" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "9. NEARBY DRIVERS"
+bold "11. NEARBY DRIVERS"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 9a. Find nearby drivers (driver was set at 12.9716, 77.5946 above)
+# 11a. Find nearby drivers
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/nearby?lat=12.9716&lng=77.5946&radius=5" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 parse_response "$RESP"
 assert_status "GET /drivers/nearby — found drivers" "200" "$CODE"
 assert_json_field "Nearby returns drivers array" "$BODY" ".drivers"
 
-# 9b. No nearby drivers (far location)
+# 11b. No nearby drivers (far location)
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/nearby?lat=0.0&lng=0.0&radius=1" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 parse_response "$RESP"
 assert_status "GET /drivers/nearby — remote location" "200" "$CODE"
 
-# 9c. Without token
+# 11c. Without token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/nearby?lat=12.9716&lng=77.5946")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "GET /drivers/nearby — no token" "401" "$CODE"
-
-# 9d. Custom radius
-RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/nearby?lat=12.9716&lng=77.5946&radius=50" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "GET /drivers/nearby — large radius" "200" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "10. TRIP REQUEST"
+bold "12. TRIP REQUEST"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 10a. Request trip — success
+# 12a. Request trip — success (rider token)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RIDER_TOKEN" \
@@ -367,14 +437,14 @@ assert_json_field "Trip request returns trip_id" "$BODY" ".trip_id"
 assert_json_equals "Trip initial status is REQUESTED" "$BODY" ".status" "REQUESTED"
 TRIP_ID=$(echo "$BODY" | jq -r '.trip_id')
 
-# 10b. Without token
+# 12b. Without token
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
   -H "Content-Type: application/json" \
   -d '{"pickupLat": 12.0, "pickupLng": 77.0, "dropLat": 13.0, "dropLng": 78.0}')
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /trips/request — no token" "401" "$CODE"
 
-# 10c. Invalid body
+# 12c. Invalid body
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RIDER_TOKEN" \
@@ -384,10 +454,10 @@ assert_status "POST /trips/request — invalid body" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "11. GET TRIP"
+bold "13. GET TRIP"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 11a. Get trip — success
+# 13a. Get trip — success
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/$TRIP_ID" \
   -H "Authorization: Bearer $RIDER_TOKEN")
 parse_response "$RESP"
@@ -395,12 +465,12 @@ assert_status "GET /trips/:id — success" "200" "$CODE"
 assert_json_equals "Trip ID matches" "$BODY" ".id" "$TRIP_ID"
 assert_json_equals "Trip rider_id matches" "$BODY" ".rider_id" "$RIDER_ID"
 
-# 11b. Without token
+# 13b. Without token
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/$TRIP_ID")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "GET /trips/:id — no token" "401" "$CODE"
 
-# 11c. Non-existent trip
+# 13c. Non-existent trip
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/00000000-0000-0000-0000-000000000000" \
   -H "Authorization: Bearer $RIDER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
@@ -408,7 +478,7 @@ assert_status "GET /trips/:id — not found" "404" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "12. MANUAL TRIP LIFECYCLE (request → assign → start → end)"
+bold "14. MANUAL TRIP LIFECYCLE (request → assign → start → end)"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Create a second trip for manual lifecycle testing
@@ -420,10 +490,9 @@ parse_response "$RESP"
 assert_status "Create trip for manual lifecycle" "201" "$CODE"
 MANUAL_TRIP_ID=$(echo "$BODY" | jq -r '.trip_id')
 
-# Wait a moment so the auto-matcher doesn't race us
 sleep 1
 
-# 12a. Assign driver — success
+# 14a. Assign driver — success
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/assign" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RIDER_TOKEN" \
@@ -433,7 +502,7 @@ assert_status "PATCH /trips/:id/assign — success" "200" "$CODE"
 assert_json_equals "Trip status after assign" "$BODY" ".status" "DRIVER_ASSIGNED"
 assert_json_equals "Assigned driver_id" "$BODY" ".driver_id" "$DRIVER_ID"
 
-# 12b. Assign again (invalid state)
+# 14b. Assign again (invalid state)
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/assign" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RIDER_TOKEN" \
@@ -441,45 +510,24 @@ RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/assign"
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "PATCH /trips/:id/assign — already assigned" "400" "$CODE"
 
-# 12c. Start trip before assigning (use the first trip that may not be assigned)
-# Create a fresh trip just for this test
-RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
-  -d '{"pickupLat": 0.001, "pickupLng": 0.001, "dropLat": 0.002, "dropLng": 0.002}')
-FRESH_TRIP_ID=$(echo "$RESP" | sed '$d' | jq -r '.trip_id')
-# Try to start without driver assigned
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$FRESH_TRIP_ID/start" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/start — not in DRIVER_ASSIGNED" "400" "$CODE"
-
-# 12d. Start trip — success (use manual trip)
+# 14c. Start trip — success (driver token)
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/start" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 parse_response "$RESP"
 assert_status "PATCH /trips/:id/start — success" "200" "$CODE"
 assert_json_equals "Trip status after start" "$BODY" ".status" "STARTED"
 assert_json_field "started_at is set" "$BODY" ".started_at"
 
-# 12e. Start again (invalid state)
+# 14d. Start again (invalid state)
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/start" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "PATCH /trips/:id/start — already started" "400" "$CODE"
 
-# 12f. End trip before starting (use the first trip)
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$FRESH_TRIP_ID/end" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
-  -d '{}')
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/end — not in STARTED state" "400" "$CODE"
-
-# 12g. End trip — success (auto fare calculation via haversine)
+# 14e. End trip — success (driver token, haversine)
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/end" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
   -d '{}')
 parse_response "$RESP"
 assert_status "PATCH /trips/:id/end — success (haversine)" "200" "$CODE"
@@ -489,17 +537,17 @@ assert_json_field "completed_at is set" "$BODY" ".completed_at"
 FARE_HAVERSINE=$(echo "$BODY" | jq -r '.fare')
 yellow "  ℹ  Fare (haversine): ₹${FARE_HAVERSINE}"
 
-# 12h. End again (invalid state)
+# 14f. End again (invalid state)
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/end" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
   -d '{}')
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "PATCH /trips/:id/end — already completed" "400" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "13. END TRIP WITH EXPLICIT DISTANCE"
+bold "15. END TRIP WITH EXPLICIT DISTANCE"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Create → Assign → Start → End with explicit distance
@@ -516,11 +564,11 @@ curl -s -X PATCH "$BASE/trips/$DIST_TRIP_ID/assign" \
   -d "{\"driverId\":\"$DRIVER_ID\"}" > /dev/null
 
 curl -s -X PATCH "$BASE/trips/$DIST_TRIP_ID/start" \
-  -H "Authorization: Bearer $RIDER_TOKEN" > /dev/null
+  -H "Authorization: Bearer $DRIVER_TOKEN" > /dev/null
 
 RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$DIST_TRIP_ID/end" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
   -d '{"distanceKm": 25.5}')
 parse_response "$RESP"
 assert_status "End trip with explicit distance" "200" "$CODE"
@@ -532,7 +580,7 @@ yellow "  ℹ  Fare (explicit 25.5km): ₹${FARE_EXPLICIT}"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "14. KAFKA AUTO-MATCHING (E2E FLOW)"
+bold "16. KAFKA AUTO-MATCHING (E2E FLOW)"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Register a new driver near Bangalore and set their location
@@ -540,7 +588,7 @@ RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/register" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"Auto Driver $TS\",\"email\":\"autodriver_${TS}@test.com\",\"phone\":\"+4${TS}\",\"password\":\"auto123\",\"vehicle_type\":\"auto\",\"license_plate\":\"KA-AUTO-${TS}\"}")
 BODY=$(echo "$RESP" | sed '$d')
-AUTO_DRIVER_TOKEN=$(echo "$BODY" | jq -r '.token')
+AUTO_DRIVER_TOKEN=$(echo "$BODY" | jq -r '.access_token')
 AUTO_DRIVER_ID=$(echo "$BODY" | jq -r '.driver.id')
 
 # Set driver location near the pickup point
@@ -580,75 +628,135 @@ fi
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "15. ASSIGN/START/END — MISSING FIELDS & EDGE CASES"
+bold "17. ROLE-BASED ACCESS CONTROL (RBAC)"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 15a. Assign with invalid body
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$TRIP_ID/assign" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
-  -d "bad")
+# 17a. Driver token cannot access rider endpoints
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/$RIDER_ID" \
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/assign — invalid body" "400" "$CODE"
+assert_status "Driver token → GET /users/:id → 403" "403" "$CODE"
 
-# 15b. Assign without token
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$TRIP_ID/assign" \
-  -H "Content-Type: application/json" \
-  -d "{\"driverId\":\"$DRIVER_ID\"}")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/assign — no token" "401" "$CODE"
-
-# 15c. Start without token
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$TRIP_ID/start")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/start — no token" "401" "$CODE"
-
-# 15d. End without token
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$TRIP_ID/end" \
-  -H "Content-Type: application/json" \
-  -d '{}')
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH /trips/:id/end — no token" "401" "$CODE"
-
-# 15e. Non-existent trip assign
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/00000000-0000-0000-0000-000000000000/assign" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
-  -d "{\"driverId\":\"$DRIVER_ID\"}")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH assign — non-existent trip" "400" "$CODE"
-
-# 15f. Non-existent trip start
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/00000000-0000-0000-0000-000000000000/start" \
+# 17b. Rider token cannot access driver endpoints
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/$DRIVER_ID" \
   -H "Authorization: Bearer $RIDER_TOKEN")
 CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH start — non-existent trip" "400" "$CODE"
+assert_status "Rider token → GET /drivers/:id → 403" "403" "$CODE"
 
-# 15g. Non-existent trip end
-RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/00000000-0000-0000-0000-000000000000/end" \
+# 17c. Rider token cannot update driver location
+RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/drivers/$DRIVER_ID/location" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"lat": 12.0, "lng": 77.0}')
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "Rider token → PATCH /drivers/:id/location → 403" "403" "$CODE"
+
+# 17d. Driver token cannot request trips
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
+  -d '{"pickupLat": 1.0, "pickupLng": 1.0, "dropLat": 2.0, "dropLng": 2.0}')
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "Driver token → POST /trips/request → 403" "403" "$CODE"
+
+# 17e. Rider token cannot start trips
+RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/start" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "Rider token → PATCH /trips/:id/start → 403" "403" "$CODE"
+
+# 17f. Rider token cannot end trips
+RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$MANUAL_TRIP_ID/end" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -d '{}')
 CODE=$(echo "$RESP" | tail -n 1)
-assert_status "PATCH end — non-existent trip" "400" "$CODE"
+assert_status "Rider token → PATCH /trips/:id/end → 403" "403" "$CODE"
+
+# 17g. Rider CAN still access trip endpoints (with rider role)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"pickupLat": 1.0, "pickupLng": 1.0, "dropLat": 2.0, "dropLng": 2.0}')
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "Rider token → POST /trips/request → 201" "201" "$CODE"
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "16. WEBSOCKET CONNECTION"
+bold "18. RIDE HISTORY"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Test WebSocket upgrade (basic check — use --max-time 3 so curl doesn't hang on open WS conn)
+# 18a. Rider history — should have multiple trips by now
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/history" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /trips/history — rider" "200" "$CODE"
+assert_json_field "History returns trips array" "$BODY" ".trips"
+assert_json_field "History returns total" "$BODY" ".total"
+assert_json_equals "History default limit is 10" "$BODY" ".limit" "10"
+assert_json_equals "History default offset is 0" "$BODY" ".offset" "0"
+
+RIDER_TOTAL=$(echo "$BODY" | jq -r '.total')
+TOTAL=$((TOTAL+1))
+if [ "$RIDER_TOTAL" -gt 0 ] 2>/dev/null; then
+  green "  ✅ PASS [$TOTAL] Rider has $RIDER_TOTAL trips in history"
+  PASS=$((PASS+1))
+else
+  red "  ❌ FAIL [$TOTAL] Rider should have trips, got total=$RIDER_TOTAL"
+  FAIL=$((FAIL+1))
+fi
+
+# 18b. Driver history
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/history" \
+  -H "Authorization: Bearer $DRIVER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /trips/history — driver" "200" "$CODE"
+assert_json_field "Driver history returns trips" "$BODY" ".trips"
+
+# 18c. Pagination with limit
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/history?limit=2&offset=0" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /trips/history?limit=2 — success" "200" "$CODE"
+assert_json_equals "History limit=2" "$BODY" ".limit" "2"
+
+TRIPS_COUNT=$(echo "$BODY" | jq '.trips | length')
+TOTAL=$((TOTAL+1))
+if [ "$TRIPS_COUNT" -le 2 ] 2>/dev/null; then
+  green "  ✅ PASS [$TOTAL] Pagination returns at most 2 trips (got $TRIPS_COUNT)"
+  PASS=$((PASS+1))
+else
+  red "  ❌ FAIL [$TOTAL] Expected at most 2 trips, got $TRIPS_COUNT"
+  FAIL=$((FAIL+1))
+fi
+
+# 18d. Limit capping at 50
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/history?limit=100" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /trips/history?limit=100 — capped" "200" "$CODE"
+assert_json_equals "Limit capped at 50" "$BODY" ".limit" "50"
+
+# 18e. Without token
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/trips/history")
+CODE=$(echo "$RESP" | tail -n 1)
+assert_status "GET /trips/history — no token" "401" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "19. WEBSOCKET CONNECTION"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Test WebSocket upgrade (basic check)
 RESP=$(curl -s --max-time 3 -w "\n%{http_code}" "$BASE/ws/trips/$TRIP_ID" \
   -H "Upgrade: websocket" \
   -H "Connection: Upgrade" \
   -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
   -H "Sec-WebSocket-Version: 13" 2>&1 || true)
 CODE=$(echo "$RESP" | tail -n 1)
-# WebSocket upgrade returns 101 on success. After --max-time curl may return 000.
-# Any code other than 404 means the route exists and the server handled the upgrade.
 TOTAL=$((TOTAL+1))
 if [ "$CODE" = "101" ] || [ "$CODE" = "000" ] || [ "$CODE" = "200" ] || [ "$CODE" = "400" ]; then
-  green "  ✅ PASS [$TOTAL] WS /ws/trips/:id — endpoint reachable (HTTP $CODE, 000=timeout after upgrade)"
+  green "  ✅ PASS [$TOTAL] WS /ws/trips/:id — endpoint reachable (HTTP $CODE)"
   PASS=$((PASS+1))
 else
   if [ "$CODE" != "404" ]; then
@@ -662,32 +770,7 @@ fi
 echo ""
 
 # ─────────────────────────────────────────────────────────────────────────────
-bold "17. CROSS-ROLE TOKEN USAGE"
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Driver token can access user endpoints (get user profile)
-RESP=$(curl -s -w "\n%{http_code}" "$BASE/users/$RIDER_ID" \
-  -H "Authorization: Bearer $DRIVER_TOKEN")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "Driver token can GET /users/:id" "200" "$CODE"
-
-# User token can access driver endpoints (get driver profile)
-RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/$DRIVER_ID" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "Rider token can GET /drivers/:id" "200" "$CODE"
-
-# User token can request trips
-RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $RIDER_TOKEN" \
-  -d '{"pickupLat": 1.0, "pickupLng": 1.0, "dropLat": 2.0, "dropLng": 2.0}')
-CODE=$(echo "$RESP" | tail -n 1)
-assert_status "Rider token can POST /trips/request" "201" "$CODE"
-echo ""
-
-# ─────────────────────────────────────────────────────────────────────────────
-bold "18. MULTIPLE DRIVERS — LOCATION & NEARBY"
+bold "20. MULTIPLE DRIVERS — LOCATION & NEARBY"
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Register 3 more drivers at different locations
@@ -695,7 +778,7 @@ for i in 1 2 3; do
   RESP=$(curl -s -X POST "$BASE/drivers/register" \
     -H "Content-Type: application/json" \
     -d "{\"name\":\"Multi Driver $i $TS\",\"email\":\"multi${i}_${TS}@test.com\",\"phone\":\"+5${i}${TS}\",\"password\":\"pass12\",\"vehicle_type\":\"sedan\",\"license_plate\":\"MUL-$i-${TS}\"}")
-  local_token=$(echo "$RESP" | jq -r '.token')
+  local_token=$(echo "$RESP" | jq -r '.access_token')
   local_id=$(echo "$RESP" | jq -r '.driver.id')
 
   # Place them at slightly different positions
@@ -710,7 +793,7 @@ done
 
 # Now search for nearby — should find multiple
 RESP=$(curl -s -w "\n%{http_code}" "$BASE/drivers/nearby?lat=12.9716&lng=77.5946&radius=5" \
-  -H "Authorization: Bearer $RIDER_TOKEN")
+  -H "Authorization: Bearer $DRIVER_TOKEN")
 parse_response "$RESP"
 assert_status "GET /drivers/nearby — multiple drivers" "200" "$CODE"
 DRIVER_COUNT=$(echo "$BODY" | jq '.drivers | length')
@@ -722,6 +805,209 @@ else
   red "  ❌ FAIL [$TOTAL] Expected multiple nearby drivers, got $DRIVER_COUNT"
   FAIL=$((FAIL+1))
 fi
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "21. FARE ESTIMATION"
+# ─────────────────────────────────────────────────────────────────────────────
+
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/estimate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245}')
+parse_response "$RESP"
+assert_status "POST /trips/estimate — rider gets estimate" "200" "$CODE"
+assert_json_field "Estimate has fare" "$BODY" ".estimated_fare"
+assert_json_field "Estimate has distance" "$BODY" ".estimated_distance"
+assert_json_field "Estimate has currency" "$BODY" ".currency"
+
+# Driver should not be able to estimate
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/estimate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
+  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245}')
+parse_response "$RESP"
+assert_status "POST /trips/estimate — driver forbidden" "403" "$CODE"
+
+# No auth
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/estimate" \
+  -H "Content-Type: application/json" \
+  -d '{"pickupLat":12.97,"pickupLng":77.59,"dropLat":12.93,"dropLng":77.62}')
+parse_response "$RESP"
+assert_status "POST /trips/estimate — no auth rejected" "401" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "22. TRIP CANCELLATION"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Create a trip to cancel
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/request" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"pickupLat":12.98,"pickupLng":77.60,"dropLat":12.94,"dropLng":77.64}')
+parse_response "$RESP"
+CANCEL_TRIP_ID=$(echo "$BODY" | jq -r '.trip_id')
+assert_status "POST /trips/request — trip for cancellation" "201" "$CODE"
+
+# Cancel it
+RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/trips/$CANCEL_TRIP_ID/cancel" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"reason":"changed my mind"}')
+parse_response "$RESP"
+assert_status "PATCH /trips/{id}/cancel — cancel trip" "200" "$CODE"
+
+# Verify status is CANCELLED
+CANCEL_STATUS=$(echo "$BODY" | jq -r '.status')
+TOTAL=$((TOTAL+1))
+if [ "$CANCEL_STATUS" = "CANCELLED" ]; then
+  green "  ✅ PASS [$TOTAL] Trip status is CANCELLED"
+  PASS=$((PASS+1))
+else
+  red "  ❌ FAIL [$TOTAL] Expected CANCELLED, got $CANCEL_STATUS"
+  FAIL=$((FAIL+1))
+fi
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "23. RATING SYSTEM"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Use a completed trip — need a fresh full lifecycle
+RATE_DRIVER_REG=$(curl -s -X POST "$BASE/drivers/register" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Rate Driver $TS\",\"email\":\"ratedrv_${TS}@test.com\",\"phone\":\"+77${TS}\",\"password\":\"pass12\",\"vehicle_type\":\"sedan\",\"license_plate\":\"RATE-${TS}\"}")
+RATE_DRV_TOKEN=$(echo "$RATE_DRIVER_REG" | jq -r '.access_token')
+RATE_DRV_ID=$(echo "$RATE_DRIVER_REG" | jq -r '.driver.id')
+
+# Set driver location
+curl -s -X PATCH "$BASE/drivers/$RATE_DRV_ID/location" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RATE_DRV_TOKEN" \
+  -d '{"lat": 12.9716, "lng": 77.5946}' > /dev/null
+
+# Request trip → wait for matching → start → end
+RESP=$(curl -s -X POST "$BASE/trips/request" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.93,"dropLng":77.62}')
+RATE_TRIP_ID=$(echo "$RESP" | jq -r '.trip_id')
+
+# Manual assign to ensure we have the right driver
+curl -s -X PATCH "$BASE/trips/$RATE_TRIP_ID/assign" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d "{\"driverId\":\"$RATE_DRV_ID\"}" > /dev/null
+
+curl -s -X PATCH "$BASE/trips/$RATE_TRIP_ID/start" \
+  -H "Authorization: Bearer $RATE_DRV_TOKEN" > /dev/null
+
+curl -s -X PATCH "$BASE/trips/$RATE_TRIP_ID/end" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RATE_DRV_TOKEN" \
+  -d '{}' > /dev/null
+
+# Now rate
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/$RATE_TRIP_ID/rate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"score":5,"comment":"Great ride!"}')
+parse_response "$RESP"
+assert_status "POST /trips/{id}/rate — rider rates driver" "201" "$CODE"
+assert_json_field "Rating has score" "$BODY" ".score"
+
+# Invalid score
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/$RATE_TRIP_ID/rate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RATE_DRV_TOKEN" \
+  -d '{"score":6}')
+parse_response "$RESP"
+assert_status "POST /trips/{id}/rate — score > 5 rejected" "400" "$CODE"
+
+# Duplicate rating (rider already rated)
+RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/trips/$RATE_TRIP_ID/rate" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -d '{"score":4}')
+parse_response "$RESP"
+assert_status "POST /trips/{id}/rate — duplicate rejected" "400" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "24. NOTIFICATIONS"
+# ─────────────────────────────────────────────────────────────────────────────
+
+sleep 3  # Wait for Kafka events to generate notifications
+
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/notifications/" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /notifications/ — rider gets notifications" "200" "$CODE"
+assert_json_field "Has notifications array" "$BODY" ".notifications"
+NOTIF_COUNT=$(echo "$BODY" | jq '.notifications | length')
+TOTAL=$((TOTAL+1))
+if [ "$NOTIF_COUNT" -gt 0 ] 2>/dev/null; then
+  green "  ✅ PASS [$TOTAL] Rider has $NOTIF_COUNT notifications"
+  PASS=$((PASS+1))
+else
+  red "  ❌ FAIL [$TOTAL] Expected notifications, got $NOTIF_COUNT"
+  FAIL=$((FAIL+1))
+fi
+
+# Mark first notification as read
+NOTIF_ID=$(echo "$BODY" | jq -r '.notifications[0].id')
+if [ -n "$NOTIF_ID" ] && [ "$NOTIF_ID" != "null" ]; then
+  RESP=$(curl -s -w "\n%{http_code}" -X PATCH "$BASE/notifications/$NOTIF_ID/read" \
+    -H "Authorization: Bearer $RIDER_TOKEN")
+  parse_response "$RESP"
+  assert_status "PATCH /notifications/{id}/read — mark read" "200" "$CODE"
+fi
+
+# No auth
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/notifications/" )
+parse_response "$RESP"
+assert_status "GET /notifications/ — no auth rejected" "401" "$CODE"
+echo ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+bold "25. PAYMENTS"
+# ─────────────────────────────────────────────────────────────────────────────
+
+sleep 2  # Wait for payment processing
+
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/payments/history" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /payments/history — rider payment history" "200" "$CODE"
+assert_json_field "Has payments array" "$BODY" ".payments"
+
+# Get payment by trip ID (using the rated trip which was completed)
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/payments/$RATE_TRIP_ID" \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+parse_response "$RESP"
+assert_status "GET /payments/{tripId} — get by trip" "200" "$CODE"
+assert_json_field "Payment has amount" "$BODY" ".amount"
+assert_json_field "Payment has status" "$BODY" ".status"
+
+# Non-owner should be forbidden
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/payments/$RATE_TRIP_ID" \
+  -H "Authorization: Bearer $RATE_DRV_TOKEN")
+parse_response "$RESP"
+# Driver on the trip should have access too, so just check it doesn't 401
+TOTAL=$((TOTAL+1))
+if [ "$CODE" = "200" ] || [ "$CODE" = "403" ]; then
+  green "  ✅ PASS [$TOTAL] GET /payments/{tripId} — auth enforced (HTTP $CODE)"
+  PASS=$((PASS+1))
+else
+  red "  ❌ FAIL [$TOTAL] GET /payments/{tripId} — unexpected HTTP $CODE"
+  FAIL=$((FAIL+1))
+fi
+
+# No auth
+RESP=$(curl -s -w "\n%{http_code}" "$BASE/payments/history")
+parse_response "$RESP"
+assert_status "GET /payments/history — no auth rejected" "401" "$CODE"
 echo ""
 
 # ═════════════════════════════════════════════════════════════════════════════

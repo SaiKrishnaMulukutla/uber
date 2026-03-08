@@ -31,6 +31,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/nearby", h.GetNearby) // must come before /{id}
 		r.Get("/{id}", h.GetByID)
 		r.Patch("/{id}/location", h.UpdateLocation)
+		r.Patch("/{id}/status", h.UpdateStatus)
 	})
 
 	return r
@@ -146,6 +147,25 @@ func (h *Handler) GetNearby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"drivers": ids})
+}
+
+func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req StatusUpdate
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateDriverStatus(req.Status) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be available, busy, or offline"})
+		return
+	}
+	d, err := h.svc.UpdateStatus(r.Context(), id, req.Status)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
