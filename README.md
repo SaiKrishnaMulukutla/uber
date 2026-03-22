@@ -57,7 +57,7 @@ flowchart TD
 ### Kafka Event Flow
 
 ```
-POST /trips/request
+POST /trips-service/request
         │
         ▼
   ride.requested ──► Matching consumer
