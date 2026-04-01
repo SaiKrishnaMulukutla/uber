@@ -100,6 +100,8 @@ func (c *Client) Publish(ctx context.Context, topic, key string, value any) erro
 }
 
 // Subscribe starts a background goroutine that reads from a topic.
+// Messages are only committed after the handler succeeds; on handler error
+// the message is not committed and will be redelivered.
 func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler func([]byte) error) {
 	r := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers:  c.brokers,
@@ -111,8 +113,13 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 
 	go func() {
 		defer r.Close()
+		defer func() {
+			if p := recover(); p != nil {
+				log.Printf("[kafka] panic in consumer for %s: %v", topic, p)
+			}
+		}()
 		for {
-			msg, err := r.ReadMessage(ctx)
+			msg, err := r.FetchMessage(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					return
@@ -123,6 +130,10 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 			}
 			if err := handler(msg.Value); err != nil {
 				log.Printf("[kafka] handler error on %s: %v", topic, err)
+				continue // don't commit — message will be redelivered
+			}
+			if err := r.CommitMessages(ctx, msg); err != nil {
+				log.Printf("[kafka] commit error on %s: %v", topic, err)
 			}
 		}
 	}()

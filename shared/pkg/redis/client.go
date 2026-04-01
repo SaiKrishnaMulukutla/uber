@@ -73,7 +73,7 @@ func (c *Client) RemoveDriverLocation(ctx context.Context, driverID string) erro
 // can be restored to the GEO pool after trip completion or cancellation.
 func (c *Client) SaveDriverLocation(ctx context.Context, driverID string, lat, lng float64) error {
 	key := fmt.Sprintf("driver:loc:%s", driverID)
-	return c.rdb.Set(ctx, key, fmt.Sprintf("%f,%f", lat, lng), 0).Err()
+	return c.rdb.Set(ctx, key, fmt.Sprintf("%f,%f", lat, lng), 24*time.Hour).Err()
 }
 
 // GetDriverLocation retrieves the last-saved lat/lng for a driver.
@@ -98,19 +98,29 @@ func (c *Client) GetDriverLocation(ctx context.Context, driverID string) (float6
 	return lat, lng, nil
 }
 
-// CacheTrip stores trip data in a hash with TTL.
-func (c *Client) CacheTrip(ctx context.Context, tripID string, data map[string]string) error {
-	key := "trip:" + tripID
-	pipe := c.rdb.Pipeline()
-	pipe.HSet(ctx, key, data)
-	pipe.Expire(ctx, key, 24*time.Hour)
-	_, err := pipe.Exec(ctx)
-	return err
+// LockDriver attempts to acquire an exclusive lock for a driver using SETNX.
+// Returns true if the lock was acquired, false if the driver is already locked.
+func (c *Client) LockDriver(ctx context.Context, driverID string, ttl time.Duration) (bool, error) {
+	return c.rdb.SetNX(ctx, "driver:lock:"+driverID, "1", ttl).Result()
 }
 
-// GetCachedTrip retrieves a cached trip hash.
-func (c *Client) GetCachedTrip(ctx context.Context, tripID string) (map[string]string, error) {
-	return c.rdb.HGetAll(ctx, "trip:"+tripID).Result()
+// UnlockDriver releases the exclusive lock for a driver.
+func (c *Client) UnlockDriver(ctx context.Context, driverID string) error {
+	return c.rdb.Del(ctx, "driver:lock:"+driverID).Err()
+}
+
+// GetDriverGeoPos retrieves a driver's current coordinates from the GEO set.
+func (c *Client) GetDriverGeoPos(ctx context.Context, driverID string) (float64, float64, error) {
+	positions, err := c.rdb.GeoPos(ctx, "driver:locations", driverID).Result()
+	if err != nil || len(positions) == 0 || positions[0] == nil {
+		return 0, 0, fmt.Errorf("driver %s not in GEO set", driverID)
+	}
+	return positions[0].Latitude, positions[0].Longitude, nil
+}
+
+// Ping checks the Redis connection.
+func (c *Client) Ping(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
 }
 
 // Close tears down the Redis connection.
