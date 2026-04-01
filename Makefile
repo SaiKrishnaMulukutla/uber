@@ -1,10 +1,14 @@
-.PHONY: up down logs build clean \
-        build-user build-driver build-trip build-matching build-notification build-payment \
-        logs-user logs-driver logs-trip logs-matching logs-gateway logs-notification logs-payment
+.PHONY: up rebuild down logs build clean \
+        logs-user logs-driver logs-trip logs-matching logs-gateway logs-notification logs-payment logs-otp
 
-# ── Docker ──────────────────────────────────────────────────────────────────
+export DOCKER_BUILDKIT=1
+
+# ── Docker ───────────────────────────────────────────────────────────────────
 
 up:
+	cd infra && docker-compose up -d
+
+rebuild:
 	cd infra && docker-compose up -d --build
 
 down:
@@ -13,10 +17,10 @@ down:
 clean:
 	cd infra && docker-compose down -v --remove-orphans
 
-# ── Per-service logs ─────────────────────────────────────────────────────────
+# ── Per-service logs ──────────────────────────────────────────────────────────
 
 logs:
-	cd infra && docker-compose logs -f user-service driver-service trip-service matching-service notification-service payment-service
+	cd infra && docker-compose logs -f user-service driver-service trip-service matching-service notification-service payment-service otp-service
 
 logs-user:
 	cd infra && docker-compose logs -f user-service
@@ -39,24 +43,13 @@ logs-notification:
 logs-payment:
 	cd infra && docker-compose logs -f payment-service
 
-# ── Local builds (no Docker) ─────────────────────────────────────────────────
+logs-otp:
+	cd infra && docker-compose logs -f otp-service
 
-build: build-user build-driver build-trip build-matching build-notification build-payment
+# ── Local builds (no Docker) ──────────────────────────────────────────────────
 
-build-user:
-	cd user-service && go build -o bin/user-service ./cmd
+build:
+	go build uber/...
 
-build-driver:
-	cd driver-service && go build -o bin/driver-service ./cmd
-
-build-trip:
-	cd trip-service && go build -o bin/trip-service ./cmd
-
-build-matching:
-	cd matching-service && go build -o bin/matching-service ./cmd
-
-build-notification:
-	cd notification-service && go build -o bin/notification-service ./cmd
-
-build-payment:
-	cd payment-service && go build -o bin/payment-service ./cmd
+build-%:
+	go build uber/$*/...
