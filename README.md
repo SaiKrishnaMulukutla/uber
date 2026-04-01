@@ -100,19 +100,33 @@ Payment processing complete
 - **WebSocket Tracking** — real-time location streaming per trip
 - **Ride History** — paginated trip/payment history with role-based filtering
 
+## Security & Reliability
+
+- **Rate Limiting** — NGINX rate limits: 5r/s for auth endpoints, 30r/s for API endpoints with burst handling
+- **Kafka Reliability** — manual offset commits (FetchMessage + CommitMessages); messages redelivered on handler failure
+- **Double-Booking Prevention** — Redis SETNX distributed lock prevents concurrent assignment of the same driver
+- **IDOR Protection** — JWT claims verified against resource ownership on profile, location, and status endpoints
+- **WebSocket Safety** — connection slice snapshot under RLock prevents race conditions during broadcast
+- **Non-Root Containers** — all Docker images run as non-root users (app/nginx)
+- **Security Headers** — X-Content-Type-Options, X-Frame-Options, X-XSS-Protection, Referrer-Policy
+- **Deep Health Checks** — /health endpoints ping DB (and Redis where used), return 503 if unhealthy
+- **Panic Recovery** — Kafka consumers recover from panics without crashing the service
+- **Idempotent Payments** — ON CONFLICT upsert ensures duplicate trip.completed events don't create double payments
+
 ## Services & Ports
 
 | Service | Port | Database | Description |
 |---------|------|----------|-------------|
 | **api-gateway** | 8000 | — | NGINX reverse proxy, routes to all services |
-| **user-service** | 8081 | users_db | Rider registration, login, refresh tokens, profile |
-| **driver-service** | 8082 | drivers_db | Driver registration, login, location, status, nearby search |
+| **user-service** | 8081 | users_db | Rider registration, 2FA login, refresh tokens, profile |
+| **driver-service** | 8082 | drivers_db | Driver registration, 2FA login, location, status, nearby search |
 | **trip-service** | 8083 | trips_db | Trip lifecycle, fare estimation, ratings, WebSocket tracking |
 | **matching-service** | — | — | Kafka consumer: matches riders with nearest available drivers |
 | **notification-service** | 8084 | notifications_db | Consumes all events, creates user notifications |
 | **payment-service** | 8085 | payments_db | Auto-creates payments on trip completion |
+| **otp-service** | 8086 | — (Redis-backed) | Stateless OTP generator — Gmail SMTP delivery, Redis TTL |
 | PostgreSQL | 5433 | — | 5 databases, one per service |
-| Redis | 6380 | — | GEO driver locations + trip cache |
+| Redis | 6380 | — | GEO driver locations + trip cache + OTP store |
 | Kafka | 9093 | — | KRaft mode, 6 topics |
 
 ## Kafka Topics
@@ -135,17 +149,19 @@ uber/
 │   ├── pkg/
 │   │   ├── db/postgres.go           # pgx pool + migration runner
 │   │   ├── kafka/client.go          # producer + consumer + topic management
-│   │   ├── redis/client.go          # GEO set + location backup + trip cache
+│   │   ├── redis/client.go          # GEO set + location backup + driver locks
 │   │   ├── jwt/jwt.go               # HS256 JWT with access + refresh tokens
 │   │   └── validation/              # Input validation helpers
 │   └── events/events.go             # Event structs for all 6 topics
-├── user-service/                    # :8081, riders
-├── driver-service/                  # :8082, drivers + Kafka status consumers
-├── trip-service/                    # :8083, trips + ratings + WebSocket
-├── matching-service/                # Kafka-only, no HTTP
-├── notification-service/            # :8084, event-driven notifications
-├── payment-service/                 # :8085, auto payments
-├── api-gateway/                     # NGINX config + Dockerfile
+├── services/
+│   ├── user-service/                # :8081, riders
+│   ├── driver-service/              # :8082, drivers + Kafka status consumers
+│   ├── trip-service/                # :8083, trips + ratings + WebSocket
+│   ├── matching-service/            # Kafka-only, no HTTP
+│   ├── notification-service/        # :8084, event-driven notifications
+│   ├── payment-service/             # :8085, auto payments
+│   ├── otp-service/                 # :8086, OTP send + verify via Gmail SMTP
+│   └── api-gateway/                 # NGINX config + Dockerfile
 ├── infra/
 │   ├── docker-compose.yml           # 10 containers
 │   ├── init.sql                     # Creates 5 databases
@@ -189,7 +205,8 @@ All requests go through the gateway at **http://localhost:8000**. Every response
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/users/register` | — | Register a rider |
-| POST | `/users/login` | — | Login as rider |
+| POST | `/users/login` | — | 2FA step 1 — validate password, send OTP → 202 |
+| POST | `/users/verify-login` | — | 2FA step 2 — verify OTP, issue JWT → 200 |
 | POST | `/users/refresh` | — | Refresh access token |
 | GET | `/users/{id}` | Bearer (rider) | Get rider profile |
 
@@ -198,7 +215,8 @@ All requests go through the gateway at **http://localhost:8000**. Every response
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | `/drivers/register` | — | Register a driver |
-| POST | `/drivers/login` | — | Login as driver |
+| POST | `/drivers/login` | — | 2FA step 1 — validate password, send OTP → 202 |
+| POST | `/drivers/verify-login` | — | 2FA step 2 — verify OTP, issue JWT → 200 |
 | POST | `/drivers/refresh` | — | Refresh access token |
 | GET | `/drivers/{id}` | Bearer (driver) | Get driver profile |
 | PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location |
@@ -281,17 +299,29 @@ curl -s -X POST http://localhost:8000/trips/estimate \
 ## End-to-End Flow
 
 ```bash
-# 1. Register rider + driver
+# 1. Register rider + driver (single-step, returns JWT directly)
 RIDER=$(curl -s -X POST http://localhost:8000/users/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Rider","email":"rider@e2e.com","phone":"+911111111111","password":"Pass123!"}')
-RIDER_TOKEN=$(echo $RIDER | jq -r '.token')
+RIDER_TOKEN=$(echo $RIDER | jq -r '.access_token')
 
 DRIVER=$(curl -s -X POST http://localhost:8000/drivers/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Driver","email":"driver@e2e.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"sedan","license_plate":"KA-99-ZZ-0001"}')
-DRIVER_TOKEN=$(echo $DRIVER | jq -r '.token')
+DRIVER_TOKEN=$(echo $DRIVER | jq -r '.access_token')
 DRIVER_ID=$(echo $DRIVER | jq -r '.driver.id')
+
+# 1b. Login (2-step with OTP) — for subsequent logins
+# Step 1: validate password, trigger OTP email → 202
+curl -s -X POST http://localhost:8000/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"rider@e2e.com","password":"Pass123!"}' | jq .
+# → {"message":"OTP sent to rider@e2e.com"}
+
+# Step 2: verify OTP, receive JWT → 200
+RIDER_TOKEN=$(curl -s -X POST http://localhost:8000/users/verify-login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"rider@e2e.com","otp":"<OTP from email>"}' | jq -r '.access_token')
 
 # 2. Set driver location
 curl -s -X PATCH http://localhost:8000/drivers/$DRIVER_ID/location \
@@ -316,7 +346,7 @@ curl -s -X PATCH http://localhost:8000/trips/$TRIP_ID/start \
   -H "Authorization: Bearer $DRIVER_TOKEN" | jq '{status}'
 curl -s -X PATCH http://localhost:8000/trips/$TRIP_ID/end \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
-  -H "Content-Type: application/json" -d '{}' | jq '{status, fare}'
+  -H "Content-Type: application/json" -d '{}' | jq '{status, fare, duration_seconds}'
 
 # 6. Rate driver + check notifications + payment
 curl -s -X POST http://localhost:8000/trips/$TRIP_ID/rate \
@@ -360,14 +390,14 @@ fare = (₹50 base + ₹12 × distance_km) × surge_multiplier
 - **Access token**: 24-hour expiry, included as `Authorization: Bearer <token>`
 - **Refresh token**: 7-day expiry, use `POST /users/refresh` or `/drivers/refresh`
 - **Roles**: `rider` (user endpoints) and `driver` (driver endpoints)
-- **Public endpoints**: `/health`, `register`, `login`, `refresh` on user/driver services
+- **Public endpoints**: `/health`, `register`, `login`, `verify-login`, `refresh` on user/driver services
 
 ## Testing
 
 ```bash
 # Unit tests (32 tests across 5 service packages + shared)
-go test ./shared/... ./user-service/... ./driver-service/... \
-  ./trip-service/... ./notification-service/... ./payment-service/...
+go test ./shared/... ./services/user-service/... ./services/driver-service/... \
+  ./services/trip-service/... ./services/notification-service/... ./services/payment-service/...
 
 # E2E integration tests (requires running containers)
 bash test/test_all.sh
