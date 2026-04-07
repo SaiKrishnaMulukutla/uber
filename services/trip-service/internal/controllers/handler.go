@@ -36,31 +36,55 @@ type LocationBroadcaster interface {
 
 // Handler exposes trip HTTP endpoints.
 type Handler struct {
-	svc TripServicer
-	hub LocationBroadcaster
+	svc            TripServicer
+	hub            LocationBroadcaster
+	internalSecret string
 }
 
 // New returns a Handler wired to the given service and WebSocket hub.
-func New(svc TripServicer, hub LocationBroadcaster) *Handler { return &Handler{svc: svc, hub: hub} }
+func New(svc TripServicer, hub LocationBroadcaster, internalSecret string) *Handler {
+	return &Handler{svc: svc, hub: hub, internalSecret: internalSecret}
+}
 
 // Routes returns a chi.Router with all trip routes.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
-	r.Use(jwt.RequireAuth)
-	r.Use(jwt.RequireRole("rider", "driver"))
 
-	r.Get("/history", h.History)
-	r.Post("/estimate", h.Estimate)
-	r.Post("/request", h.Request)
-	r.Get("/{id}", h.GetByID)
-	r.Patch("/{id}/assign", h.Assign)
-	r.Patch("/{id}/cancel", h.Cancel)
-	r.Patch("/{id}/start", h.Start)
-	r.Patch("/{id}/end", h.End)
-	r.Post("/{id}/rate", h.Rate)
-	r.Post("/{id}/location", h.PushLocation)
+	// Internal-only route: requires X-Internal-Secret header, not a user JWT.
+	// Called by matching-service; must never be reachable from driver clients.
+	r.Group(func(r chi.Router) {
+		r.Use(h.requireInternalSecret)
+		r.Patch("/{id}/assign", h.Assign)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(jwt.RequireAuth)
+		r.Use(jwt.RequireRole("rider", "driver"))
+
+		r.Get("/history", h.History)
+		r.Post("/estimate", h.Estimate)
+		r.Post("/request", h.Request)
+		r.Get("/{id}", h.GetByID)
+		r.Patch("/{id}/cancel", h.Cancel)
+		r.Patch("/{id}/start", h.Start)
+		r.Patch("/{id}/end", h.End)
+		r.Post("/{id}/rate", h.Rate)
+		r.Post("/{id}/location", h.PushLocation)
+	})
 
 	return r
+}
+
+// requireInternalSecret is middleware that rejects requests without the correct
+// X-Internal-Secret header. When the secret is empty (dev/test), it allows all.
+func (h *Handler) requireInternalSecret(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.internalSecret != "" && r.Header.Get("X-Internal-Secret") != h.internalSecret {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) Estimate(w http.ResponseWriter, r *http.Request) {
@@ -147,23 +171,16 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, t)
 }
 
+// Assign is an internal endpoint called by matching-service (not user clients).
+// It is protected by X-Internal-Secret, not a user JWT.
 func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
-	claims := jwt.GetClaims(r.Context())
-	if claims.Role != "driver" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can self-assign trips"})
-		return
-	}
 	var req model.AssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if req.DriverID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driverId is required"})
-		return
-	}
-	if req.DriverID != claims.UserID {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you can only assign yourself as driver"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver_id is required"})
 		return
 	}
 	t, err := h.svc.AssignDriver(r.Context(), chi.URLParam(r, "id"), req.DriverID)

@@ -45,12 +45,11 @@ func New(repo repository.Repository, m mailer.Mailer) OTPService {
 
 // SendOTP generates a 6-digit OTP, stores its SHA256 hash, and emails it.
 func (s *otpService) SendOTP(ctx context.Context, email string) error {
-	// 1. Rate limit check
-	count, err := s.repo.GetSendCount(ctx, email)
+	count, err := s.repo.IncrAndCheckRateLimit(ctx, email)
 	if err != nil {
 		return fmt.Errorf("service: rate check failed: %w", err)
 	}
-	if count >= maxSendPerWindow {
+	if count > maxSendPerWindow {
 		return ErrRateLimitExceeded
 	}
 
@@ -71,11 +70,6 @@ func (s *otpService) SendOTP(ctx context.Context, email string) error {
 	// 5. Reset attempt counter so this OTP gets a fresh 5 tries
 	if err := s.repo.ResetAttempts(ctx, email); err != nil {
 		return fmt.Errorf("service: reset attempts failed: %w", err)
-	}
-
-	// 6. Increment rate-limit counter (TTL set only on first increment)
-	if err := s.repo.IncrRateLimit(ctx, email); err != nil {
-		return fmt.Errorf("service: rate limit incr failed: %w", err)
 	}
 
 	// 7. Send OTP via email — log but don't fail if email is unavailable

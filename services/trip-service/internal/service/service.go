@@ -123,11 +123,14 @@ func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *
 		return nil, errors.New("you are not the assigned driver for this trip")
 	}
 
-	km := 0.0
+	baseline := haversineKm(trip.PickupLat, trip.PickupLng, trip.DropLat, trip.DropLng)
+	km := baseline
 	if distKm != nil && *distKm > 0 {
+		const maxDistKm = 200.0
+		if *distKm > baseline*1.5 || *distKm > maxDistKm {
+			return nil, fmt.Errorf("claimed distance %.2f km is not plausible for this trip", *distKm)
+		}
 		km = *distKm
-	} else {
-		km = haversineKm(trip.PickupLat, trip.PickupLng, trip.DropLat, trip.DropLng)
 	}
 
 	fare := calcFare(km)
@@ -284,22 +287,25 @@ func (s *tripService) Rate(ctx context.Context, tripID, raterID, raterRole strin
 		return nil, errors.New("invalid role")
 	}
 
-	rating, err := s.repo.CreateRating(ctx, tripID, raterID, raterRole, rateeID, rateeRole, req.Score, req.Comment)
+	rating, created, err := s.repo.CreateRating(ctx, tripID, raterID, raterRole, rateeID, rateeRole, req.Score, req.Comment)
 	if err != nil {
 		return nil, err
 	}
 
-	ev := kafka.RatingSubmittedEvent{
-		TripID:    tripID,
-		RaterID:   raterID,
-		RaterRole: raterRole,
-		RateeID:   rateeID,
-		RateeRole: rateeRole,
-		Score:     req.Score,
-		Comment:   req.Comment,
-	}
-	if err := s.kafka.Publish(ctx, kafka.TopicRatingSubmitted, tripID, ev); err != nil {
-		log.Printf("[trip-service] failed to publish rating.submitted: %v", err)
+	// Only publish on first insert — skip on Kafka redelivery to prevent duplicate rating events.
+	if created {
+		ev := kafka.RatingSubmittedEvent{
+			TripID:    tripID,
+			RaterID:   raterID,
+			RaterRole: raterRole,
+			RateeID:   rateeID,
+			RateeRole: rateeRole,
+			Score:     req.Score,
+			Comment:   req.Comment,
+		}
+		if err := s.kafka.Publish(ctx, kafka.TopicRatingSubmitted, tripID, ev); err != nil {
+			log.Printf("[trip-service] failed to publish rating.submitted: %v", err)
+		}
 	}
 
 	return rating, nil

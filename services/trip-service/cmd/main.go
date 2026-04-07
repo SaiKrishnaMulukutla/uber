@@ -66,8 +66,8 @@ func main() {
 		return repo.AssignDriver(ctx, ev.TripID, ev.DriverID)
 	})
 
-	wsHub := tracking.NewHub()
-	h := controllers.New(svc, wsHub)
+	wsHub := tracking.NewHub(cfg.AllowedOrigins)
+	h := controllers.New(svc, wsHub, cfg.InternalSecret)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
