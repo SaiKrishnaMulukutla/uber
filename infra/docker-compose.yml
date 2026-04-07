@@ -124,6 +124,8 @@ services:
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       PORT: "8083"
     ports:
       - "8083:8083"
