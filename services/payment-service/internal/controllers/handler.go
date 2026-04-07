@@ -19,6 +19,7 @@ type PaymentServicer interface {
 	VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
 	HandleWebhook(ctx context.Context, body []byte, signature string) error
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
+	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
 }
@@ -134,11 +135,22 @@ func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 // Simulate completes a payment without provider interaction (dev/testing only).
 // Body: {"payment_id": "<uuid>"}
 func (h *Handler) Simulate(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
 	var body struct {
 		PaymentID string `json:"payment_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PaymentID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_id is required"})
+		return
+	}
+	// Ownership check: fetch the payment and ensure the caller is the rider or driver.
+	existing, err := h.svc.GetByPaymentID(r.Context(), body.PaymentID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "payment not found"})
+		return
+	}
+	if claims.UserID != existing.RiderID && claims.UserID != existing.DriverID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not your payment"})
 		return
 	}
 	p, err := h.svc.SimulateSuccess(r.Context(), body.PaymentID)
@@ -164,6 +176,9 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		if o, err := strconv.Atoi(v); err == nil && o >= 0 {
 			offset = o
 		}
+	}
+	if offset > 10000 {
+		offset = 10000
 	}
 	return
 }
