@@ -10,7 +10,9 @@ import (
 )
 
 type NotificationRepository interface {
-	Create(ctx context.Context, userID, notifType, title, body string) error
+	// Create inserts a notification; idempotencyKey prevents duplicate inserts on
+	// Kafka redelivery. Pass an empty string to skip deduplication.
+	Create(ctx context.Context, userID, notifType, title, body, idempotencyKey string) error
 	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Notification, int, error)
 	MarkRead(ctx context.Context, id, userID string) error
 }
@@ -23,10 +25,16 @@ func NewRepository(db *pgxpool.Pool) NotificationRepository {
 	return &pgNotificationRepository{db: db}
 }
 
-func (r *pgNotificationRepository) Create(ctx context.Context, userID, notifType, title, body string) error {
+func (r *pgNotificationRepository) Create(ctx context.Context, userID, notifType, title, body, idempotencyKey string) error {
+	var key *string
+	if idempotencyKey != "" {
+		key = &idempotencyKey
+	}
 	_, err := r.db.Exec(ctx,
-		`INSERT INTO notifications (user_id, type, title, body) VALUES ($1,$2,$3,$4)`,
-		userID, notifType, title, body)
+		`INSERT INTO notifications (user_id, type, title, body, idempotency_key)
+		 VALUES ($1,$2,$3,$4,$5)
+		 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING`,
+		userID, notifType, title, body, key)
 	return err
 }
 
