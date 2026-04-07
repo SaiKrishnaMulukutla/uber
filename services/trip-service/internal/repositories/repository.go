@@ -21,7 +21,9 @@ type TripRepository interface {
 	CancelTrip(ctx context.Context, tripID string, now time.Time) error
 	ListByRider(ctx context.Context, riderID string, limit, offset int) ([]*model.Trip, int, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) ([]*model.Trip, int, error)
-	CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, error)
+	// CreateRating inserts a rating. Returns (rating, true, nil) when newly inserted,
+	// (rating, false, nil) when the rating already existed (idempotent on Kafka retry).
+	CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, bool, error)
 }
 
 type pgTripRepository struct{ pool *pgxpool.Pool }
@@ -150,7 +152,7 @@ func (r *pgTripRepository) queryTrips(ctx context.Context, total int, query stri
 	return trips, total, nil
 }
 
-func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, error) {
+func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, bool, error) {
 	var rating model.Rating
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO ratings (trip_id, rater_id, rater_role, ratee_id, ratee_role, score, comment)
@@ -169,8 +171,9 @@ func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, ra
 			Scan(&rating.ID, &rating.TripID, &rating.RaterID, &rating.RaterRole,
 				&rating.RateeID, &rating.RateeRole, &rating.Score, &rating.Comment, &rating.CreatedAt)
 		if fetchErr != nil {
-			return nil, errors.New("rating creation failed")
+			return nil, false, errors.New("rating creation failed")
 		}
+		return &rating, false, nil // already existed
 	}
-	return &rating, nil
+	return &rating, true, nil // newly inserted
 }
