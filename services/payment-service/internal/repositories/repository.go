@@ -76,20 +76,22 @@ func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOr
 }
 
 // MarkCompleted transitions a payment to COMPLETED.
+// The status guard prevents a concurrent webhook + verify from double-completing.
 func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error {
 	const q = `UPDATE payments
 		SET status = 'COMPLETED', provider_payment_id = $2, provider_signature = $3,
 		    completed_at = $4, updated_at = NOW()
-		WHERE id = $1`
+		WHERE id = $1 AND status IN ('PENDING', 'PROCESSING')`
 	_, err := r.db.Exec(ctx, q, id, providerPaymentID, providerSignature, completedAt)
 	return err
 }
 
 // MarkFailed transitions a payment to FAILED and records the reason.
+// The status guard prevents overwriting a COMPLETED or already-FAILED payment.
 func (r *pgPaymentRepository) MarkFailed(ctx context.Context, id, reason string) error {
 	const q = `UPDATE payments
 		SET status = 'FAILED', failure_reason = $2, updated_at = NOW()
-		WHERE id = $1`
+		WHERE id = $1 AND status NOT IN ('COMPLETED', 'FAILED')`
 	_, err := r.db.Exec(ctx, q, id, reason)
 	return err
 }

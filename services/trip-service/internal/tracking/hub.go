@@ -12,10 +12,6 @@ import (
 	"uber/shared/pkg/jwt"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 // safeConn wraps a websocket.Conn with a write mutex.
 type safeConn struct {
 	mu sync.Mutex
@@ -36,13 +32,33 @@ func (c *safeConn) close() { c.ws.Close() }
 
 // Hub manages WebSocket connections per trip.
 type Hub struct {
-	mu    sync.RWMutex
-	conns map[string][]*safeConn
+	mu       sync.RWMutex
+	conns    map[string][]*safeConn
+	upgrader websocket.Upgrader
 }
 
-// NewHub creates a tracking hub.
-func NewHub() *Hub {
-	return &Hub{conns: make(map[string][]*safeConn)}
+// NewHub creates a tracking hub. allowedOrigins restricts which browser origins
+// may open a WebSocket connection. Pass an empty slice to allow all origins
+// (development only — never in production).
+func NewHub(allowedOrigins []string) *Hub {
+	allowed := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		allowed[o] = struct{}{}
+	}
+	checkOrigin := func(r *http.Request) bool {
+		if len(allowed) == 0 {
+			return true // dev mode
+		}
+		origin := r.Header.Get("Origin")
+		_, ok := allowed[origin]
+		return ok
+	}
+	return &Hub{
+		conns: make(map[string][]*safeConn),
+		upgrader: websocket.Upgrader{
+			CheckOrigin: checkOrigin,
+		},
+	}
 }
 
 // Routes returns a chi.Router for the /ws mount point.
@@ -68,7 +84,7 @@ func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tripID := chi.URLParam(r, "id")
-	ws, err := upgrader.Upgrade(w, r, nil)
+	ws, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[ws] upgrade error: %v", err)
 		return
