@@ -80,17 +80,9 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		return nil
 	}
 
-	assigned := kafka.DriverAssignedEvent{
-		TripID:   ev.TripID,
-		DriverID: assignedDriver,
-	}
-
-	if err := pub.Publish(ctx, kafka.TopicDriverAssigned, ev.TripID, assigned); err != nil {
-		log.Printf("[matching] failed to publish driver.assigned: %v", err)
-		_ = geo.UnlockDriver(ctx, assignedDriver)
-		return err
-	}
-
+	// Save location backup BEFORE publishing so a failure here doesn't leave an
+	// unretractable driver.assigned event in Kafka (which would cause an infinite
+	// ride.requested retry loop on the next delivery).
 	lat, lng, posErr := geo.GetDriverGeoPos(ctx, assignedDriver)
 	if posErr != nil {
 		log.Printf("[matching] warn: could not read geo pos for driver %s, unlocking: %v", assignedDriver, posErr)
@@ -102,6 +94,18 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		_ = geo.UnlockDriver(ctx, assignedDriver)
 		return saveErr
 	}
+
+	assigned := kafka.DriverAssignedEvent{
+		TripID:   ev.TripID,
+		DriverID: assignedDriver,
+	}
+
+	if err := pub.Publish(ctx, kafka.TopicDriverAssigned, ev.TripID, assigned); err != nil {
+		log.Printf("[matching] failed to publish driver.assigned: %v", err)
+		_ = geo.UnlockDriver(ctx, assignedDriver)
+		return err
+	}
+
 	_ = geo.RemoveDriverLocation(ctx, assignedDriver)
 
 	log.Printf("[matching] assigned driver %s → trip %s", assignedDriver, ev.TripID)

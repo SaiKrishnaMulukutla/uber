@@ -127,7 +127,10 @@ make clean         # stop + wipe volumes
 | `JWT_SECRET` | yes | HS256 signing key (`openssl rand -base64 32`) |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` | yes | SMTP for OTP delivery |
 | `PAYMENT_PROVIDER` | no | `cash` (default) or `razorpay` |
-| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | if razorpay | Razorpay credentials |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | if razorpay | Razorpay API credentials |
+| `RAZORPAY_WEBHOOK_SECRET` | if razorpay | Webhook signing secret from Razorpay dashboard |
+| `INTERNAL_SECRET` | no | Shared secret for service-to-service calls (`openssl rand -base64 32`) |
+| `ALLOWED_ORIGINS` | no | Comma-separated WebSocket origin allowlist (empty = allow all, dev only) |
 
 ---
 
@@ -166,7 +169,7 @@ All requests route through **`http://localhost:8000`**. Authentication via `Auth
 | POST | `/trips/request` | Bearer (rider) | Request a ride |
 | GET | `/trips/history` | Bearer | Paginated trip history |
 | GET | `/trips/{id}` | Bearer | Trip details (participants only) |
-| PATCH | `/trips/{id}/assign` | Bearer (driver) | Self-assign to a trip |
+| PATCH | `/trips/{id}/assign` | X-Internal-Secret | Internal — matching-service only |
 | PATCH | `/trips/{id}/start` | Bearer (driver) | Start trip |
 | PATCH | `/trips/{id}/end` | Bearer (driver) | End trip, compute fare |
 | PATCH | `/trips/{id}/cancel` | Bearer | Cancel trip |
@@ -187,10 +190,10 @@ All requests route through **`http://localhost:8000`**. Authentication via `Auth
 |--------|------|------|-------------|
 | GET | `/payments/history` | Bearer | Paginated payment history |
 | GET | `/payments/{tripId}` | Bearer | Payment by trip (participants only) |
-| POST | `/payments/orders` | Bearer (rider) | Create Razorpay order |
-| POST | `/payments/verify` | Bearer (rider) | Verify Razorpay signature |
-| POST | `/payments/webhook` | HMAC | Razorpay webhook |
-| POST | `/payments/simulate-success` | Bearer | Complete payment without provider |
+| POST | `/payments/orders` | Bearer (rider) | Create Razorpay order → returns `provider_order_id` + `key_id` |
+| POST | `/payments/verify` | Bearer (rider) | Submit Razorpay signature → completes payment |
+| POST | `/payments/webhook` | HMAC | Razorpay async backup confirmation |
+| POST | `/payments/simulate-success` | Bearer | Complete payment without provider (dev/test) |
 
 ---
 
@@ -256,7 +259,93 @@ curl -s $BASE/payments/$TRIP_ID \
   -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,amount}'
 ```
 
-### Trip State Machine
+---
+
+## Payment Flow
+
+### Cash (default)
+
+```
+PATCH /trips/{id}/end
+  └─► trip.completed (Kafka)
+        └─► payment-service: INSERT status=PENDING
+              └─► immediately COMPLETED
+                    └─► payment.completed (Kafka) ──► notification email
+```
+
+No frontend steps required. The payment completes automatically.
+
+### Card (Razorpay)
+
+```
+[1]  PATCH /trips/{id}/end
+       └─► trip.completed (Kafka) → payment created  status=PENDING
+
+[2]  GET /payments/{tripId}
+       ← { id: payment_id, status: "PENDING", amount }
+
+[3]  POST /payments/orders  { payment_id }
+       ← { provider_order_id, amount, currency: "INR", key_id }
+       payment status → PROCESSING
+
+[4]  Frontend — Razorpay Checkout
+       new Razorpay({
+         key:      key_id,
+         order_id: provider_order_id,
+         amount:   amount * 100,   // paise
+         currency: "INR",
+         handler(response) {
+           // response.razorpay_payment_id
+           // response.razorpay_order_id
+           // response.razorpay_signature
+           POST /payments/verify ← above fields + payment_id
+         }
+       }).open()
+
+[5]  POST /payments/verify
+       { payment_id, provider_order_id, provider_payment_id, signature }
+       ← HMAC-SHA256(order_id|payment_id) verified against key_secret
+       ← status=COMPLETED → payment.completed (Kafka) → notification email
+
+[6]  Backup — Razorpay webhook (async, if browser closes before step 5)
+       POST /payments/webhook  X-Razorpay-Signature: <hmac>
+       ← HMAC-SHA256(body) verified against webhook_secret
+       ← idempotent: no-op if already COMPLETED
+```
+
+### Simulate (dev/test, no Razorpay keys needed)
+
+```bash
+PAYMENT_ID=$(curl -s $BASE/payments/$TRIP_ID \
+  -H "Authorization: Bearer $RIDER_TOKEN" | jq -r '.id')
+
+curl -s -X POST $BASE/payments/simulate-success \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"payment_id\":\"$PAYMENT_ID\"}" | jq '{status,amount}'
+```
+
+### Enabling Razorpay
+
+```bash
+# infra/.env
+PAYMENT_PROVIDER=razorpay
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...   # from Razorpay Dashboard → Webhooks
+```
+
+Configure the webhook URL in the [Razorpay Dashboard](https://dashboard.razorpay.com) → Webhooks:
+- **URL:** `https://your-domain.com/payments/webhook`
+- **Event:** `payment.captured`
+
+For local testing use `ngrok http 8000` to get a public HTTPS URL.
+
+---
+
+## State Machines
+
+### Trip
 
 ```
 REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
@@ -265,11 +354,22 @@ REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
                     └─ driver restored to GEO pool
 ```
 
+### Payment
+
+```
+PENDING ──► PROCESSING ──► COMPLETED
+  │               │              └─ payment.completed published
+  │               └─────────────► FAILED
+  └─ cash / simulate ──────────► COMPLETED  (skips PROCESSING)
+```
+
 ### Fare
 
 ```
 ₹50 base  +  ₹12 × distance_km  ×  surge_multiplier  (capped at 5×)
 ```
+
+Driver-supplied distance is accepted only if within `1.5×` the straight-line (haversine) distance and under 200 km — otherwise the haversine value is used.
 
 ---
 
@@ -277,7 +377,7 @@ REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
 
 ```bash
 # Unit tests
-go test uber/shared/... uber/user-service/... uber/driver-service/... \
+go test uber/shared/... uber/otp-service/... uber/user-service/... uber/driver-service/... \
   uber/trip-service/... uber/notification-service/... uber/payment-service/...
 
 # Build all
