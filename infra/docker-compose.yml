@@ -249,7 +249,8 @@ services:
 
   api-gateway:
     build:
-      context: ../services/api-gateway
+      context: .
+      dockerfile: nginx.Dockerfile
     container_name: api-gateway
     restart: unless-stopped
     ports:
