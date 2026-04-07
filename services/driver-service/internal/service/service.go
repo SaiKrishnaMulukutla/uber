@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 
 	"github.com/google/uuid"
@@ -11,6 +12,7 @@ import (
 	"uber/driver-service/internal/model"
 	"uber/driver-service/internal/repositories"
 	"uber/shared/pkg/jwt"
+	"uber/shared/pkg/mailer"
 	rredis "uber/shared/pkg/redis"
 )
 
@@ -33,14 +35,15 @@ type DriverService interface {
 }
 
 type driverService struct {
-	repo  repositories.DriverRepository
-	redis *rredis.Client
-	otp   OTPClient
+	repo   repositories.DriverRepository
+	redis  *rredis.Client
+	otp    OTPClient
+	mailer mailer.Mailer
 }
 
-// New returns a DriverService backed by the given repository, Redis client, and OTP client.
-func New(repo repositories.DriverRepository, redis *rredis.Client, otp OTPClient) DriverService {
-	return &driverService{repo: repo, redis: redis, otp: otp}
+// New returns a DriverService backed by the given repository, Redis client, OTP client, and optional mailer.
+func New(repo repositories.DriverRepository, redis *rredis.Client, otp OTPClient, m mailer.Mailer) DriverService {
+	return &driverService{repo: repo, redis: redis, otp: otp, mailer: m}
 }
 
 func (s *driverService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
@@ -86,11 +89,53 @@ func (s *driverService) Register(ctx context.Context, req model.RegisterRequest)
 		return nil, err
 	}
 
+	if s.mailer != nil {
+		if err := s.mailer.Send(d.Email, "Welcome to Uber!", welcomeEmailBody(d.Name)); err != nil {
+			log.Printf("[driver-service] failed to send welcome email to %s: %v", d.Email, err)
+		}
+	}
+
 	return &model.AuthResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
 		Driver:       d,
 	}, nil
+}
+
+func welcomeEmailBody(name string) string {
+	return buildEmailLayout(fmt.Sprintf(`
+<h2 style="color:#000;margin:0 0 16px;">Welcome to Uber, %s!</h2>
+<p style="margin:0 0 12px;color:#333;line-height:1.6;">Your driver account has been created successfully. Start accepting rides right away.</p>
+<p style="margin:0;color:#888;font-size:13px;">If you didn't create this account, please contact support immediately.</p>`, name))
+}
+
+func buildEmailLayout(content string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"/><title>Uber</title></head>
+<body style="margin:0;padding:0;background-color:#f6f6f6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+    <tr><td align="center">
+      <table width="520" cellpadding="0" cellspacing="0" border="0"
+             style="background-color:#ffffff;border-radius:4px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <tr><td style="background-color:#000000;padding:28px 40px;">
+          <span style="color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">Uber</span>
+        </td></tr>
+        <tr><td style="padding:40px 40px 28px;">%s</td></tr>
+        <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #eeeeee;margin:0;"/></td></tr>
+        <tr><td style="padding:24px 40px 32px;">
+          <p style="margin:0 0 4px;font-size:12px;color:#aaaaaa;line-height:1.6;">
+            This is an automated message from Uber. Please do not reply to this email.
+          </p>
+          <p style="margin:0;font-size:12px;color:#cccccc;line-height:1.6;text-align:center;">
+            Created with &#10084;&#65039; by Mulukutla Sai Krishna
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`, content)
 }
 
 // Login validates credentials and triggers an OTP send. No JWT is issued here.

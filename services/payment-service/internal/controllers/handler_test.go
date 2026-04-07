@@ -20,8 +20,12 @@ import (
 // ---------- mock ----------
 
 type mockPaymentService struct {
-	GetByTripIDFn func(ctx context.Context, tripID string) (*model.Payment, error)
-	ListByUserFn  func(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
+	GetByTripIDFn    func(ctx context.Context, tripID string) (*model.Payment, error)
+	ListByUserFn     func(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
+	CreateOrderFn    func(ctx context.Context, paymentID string) (*model.OrderResponse, error)
+	VerifyPaymentFn  func(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
+	HandleWebhookFn  func(ctx context.Context, body []byte, signature string) error
+	SimulateSuccFn   func(ctx context.Context, paymentID string) (*model.Payment, error)
 }
 
 func (m *mockPaymentService) GetByTripID(ctx context.Context, tripID string) (*model.Payment, error) {
@@ -29,6 +33,30 @@ func (m *mockPaymentService) GetByTripID(ctx context.Context, tripID string) (*m
 }
 func (m *mockPaymentService) ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error) {
 	return m.ListByUserFn(ctx, userID, limit, offset)
+}
+func (m *mockPaymentService) CreateOrder(ctx context.Context, paymentID string) (*model.OrderResponse, error) {
+	if m.CreateOrderFn != nil {
+		return m.CreateOrderFn(ctx, paymentID)
+	}
+	return nil, nil
+}
+func (m *mockPaymentService) VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error) {
+	if m.VerifyPaymentFn != nil {
+		return m.VerifyPaymentFn(ctx, req)
+	}
+	return nil, nil
+}
+func (m *mockPaymentService) HandleWebhook(ctx context.Context, body []byte, signature string) error {
+	if m.HandleWebhookFn != nil {
+		return m.HandleWebhookFn(ctx, body, signature)
+	}
+	return nil
+}
+func (m *mockPaymentService) SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error) {
+	if m.SimulateSuccFn != nil {
+		return m.SimulateSuccFn(ctx, paymentID)
+	}
+	return nil, nil
 }
 
 // ---------- helpers ----------

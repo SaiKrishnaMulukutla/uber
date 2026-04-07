@@ -9,10 +9,15 @@ import (
 	"uber/payment-service/internal/model"
 )
 
+// PaymentRepository defines all persistence operations for payments.
 type PaymentRepository interface {
-	Create(ctx context.Context, tripID, riderID, driverID string, amount float64) (*model.Payment, error)
-	MarkCompleted(ctx context.Context, id string, completedAt time.Time) error
+	Create(ctx context.Context, tripID, riderID, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
+	MarkProcessing(ctx context.Context, id, providerOrderID string) error
+	MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error
+	MarkFailed(ctx context.Context, id, reason string) error
+	FindByID(ctx context.Context, id string) (*model.Payment, error)
 	FindByTripID(ctx context.Context, tripID string) (*model.Payment, error)
+	FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Payment, int, error)
 }
 
@@ -20,68 +25,117 @@ type pgPaymentRepository struct {
 	db *pgxpool.Pool
 }
 
+// NewRepository returns a PostgreSQL-backed PaymentRepository.
 func NewRepository(db *pgxpool.Pool) PaymentRepository {
 	return &pgPaymentRepository{db: db}
 }
 
-func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, driverID string, amount float64) (*model.Payment, error) {
-	var p model.Payment
-	err := r.db.QueryRow(ctx,
-		`INSERT INTO payments (trip_id, rider_id, driver_id, amount, status, payment_method)
-		 VALUES ($1,$2,$3,$4,$5,'cash')
-		 ON CONFLICT (trip_id) DO UPDATE SET trip_id=EXCLUDED.trip_id
-		 RETURNING id, trip_id, rider_id, driver_id, amount, status, payment_method, created_at, completed_at`,
-		tripID, riderID, driverID, amount, model.StatusPending).
-		Scan(&p.ID, &p.TripID, &p.RiderID, &p.DriverID, &p.Amount, &p.Status, &p.PaymentMethod, &p.CreatedAt, &p.CompletedAt)
+const selectCols = `id, trip_id, rider_id, driver_id, amount, status, payment_method, provider,
+	COALESCE(provider_order_id, ''), COALESCE(provider_payment_id, ''), COALESCE(failure_reason, ''),
+	attempts_count, created_at, completed_at, updated_at`
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPayment(row scanner) (*model.Payment, error) {
+	p := &model.Payment{}
+	err := row.Scan(
+		&p.ID, &p.TripID, &p.RiderID, &p.DriverID, &p.Amount, &p.Status,
+		&p.PaymentMethod, &p.Provider,
+		&p.ProviderOrderID, &p.ProviderPaymentID, &p.FailureReason,
+		&p.AttemptsCount, &p.CreatedAt, &p.CompletedAt, &p.UpdatedAt,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return &p, nil
+	return p, nil
 }
 
-func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id string, completedAt time.Time) error {
-	_, err := r.db.Exec(ctx,
-		`UPDATE payments SET status=$1, completed_at=$2 WHERE id=$3`,
-		model.StatusCompleted, completedAt, id)
+// Create inserts a new PENDING payment. Returns nil, nil on duplicate trip_id (idempotent).
+func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
+	const q = `INSERT INTO payments (trip_id, rider_id, driver_id, amount, status, payment_method, provider)
+		VALUES ($1, $2, $3, $4, 'PENDING', $5, $6)
+		ON CONFLICT (trip_id) DO NOTHING
+		RETURNING ` + selectCols
+	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, driverID, amount, paymentMethod, providerName))
+	if err != nil {
+		// pgx returns pgx.ErrNoRows when ON CONFLICT suppresses the INSERT
+		return nil, nil //nolint:nilerr
+	}
+	return p, nil
+}
+
+// MarkProcessing transitions a payment to PROCESSING and stores the provider order ID.
+func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID string) error {
+	const q = `UPDATE payments
+		SET status = 'PROCESSING', provider_order_id = $2, attempts_count = attempts_count + 1, updated_at = NOW()
+		WHERE id = $1`
+	_, err := r.db.Exec(ctx, q, id, providerOrderID)
 	return err
 }
 
-func (r *pgPaymentRepository) FindByTripID(ctx context.Context, tripID string) (*model.Payment, error) {
-	var p model.Payment
-	err := r.db.QueryRow(ctx,
-		`SELECT id, trip_id, rider_id, driver_id, amount, status, payment_method, created_at, completed_at
-		 FROM payments WHERE trip_id=$1`, tripID).
-		Scan(&p.ID, &p.TripID, &p.RiderID, &p.DriverID, &p.Amount, &p.Status, &p.PaymentMethod, &p.CreatedAt, &p.CompletedAt)
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
+// MarkCompleted transitions a payment to COMPLETED.
+func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error {
+	const q = `UPDATE payments
+		SET status = 'COMPLETED', provider_payment_id = $2, provider_signature = $3,
+		    completed_at = $4, updated_at = NOW()
+		WHERE id = $1`
+	_, err := r.db.Exec(ctx, q, id, providerPaymentID, providerSignature, completedAt)
+	return err
 }
 
+// MarkFailed transitions a payment to FAILED and records the reason.
+func (r *pgPaymentRepository) MarkFailed(ctx context.Context, id, reason string) error {
+	const q = `UPDATE payments
+		SET status = 'FAILED', failure_reason = $2, updated_at = NOW()
+		WHERE id = $1`
+	_, err := r.db.Exec(ctx, q, id, reason)
+	return err
+}
+
+// FindByID retrieves a payment by its internal UUID.
+func (r *pgPaymentRepository) FindByID(ctx context.Context, id string) (*model.Payment, error) {
+	const q = `SELECT ` + selectCols + ` FROM payments WHERE id = $1`
+	return scanPayment(r.db.QueryRow(ctx, q, id))
+}
+
+// FindByTripID retrieves a payment by its trip_id.
+func (r *pgPaymentRepository) FindByTripID(ctx context.Context, tripID string) (*model.Payment, error) {
+	const q = `SELECT ` + selectCols + ` FROM payments WHERE trip_id = $1`
+	return scanPayment(r.db.QueryRow(ctx, q, tripID))
+}
+
+// FindByProviderOrderID retrieves a payment by its provider order ID (for webhook lookup).
+func (r *pgPaymentRepository) FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error) {
+	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_order_id = $1`
+	return scanPayment(r.db.QueryRow(ctx, q, providerOrderID))
+}
+
+// ListByUser returns paginated payments for a rider or driver.
 func (r *pgPaymentRepository) ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Payment, int, error) {
 	var total int
 	if err := r.db.QueryRow(ctx,
-		"SELECT COUNT(*) FROM payments WHERE rider_id=$1 OR driver_id=$1", userID).Scan(&total); err != nil {
+		`SELECT COUNT(*) FROM payments WHERE rider_id = $1 OR driver_id = $1`, userID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.db.Query(ctx,
-		`SELECT id, trip_id, rider_id, driver_id, amount, status, payment_method, created_at, completed_at
-		 FROM payments WHERE rider_id=$1 OR driver_id=$1
-		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, userID, limit, offset)
+
+	const q = `SELECT ` + selectCols + `
+		FROM payments WHERE rider_id = $1 OR driver_id = $1
+		ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+	rows, err := r.db.Query(ctx, q, userID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	payments := []*model.Payment{}
+
+	var payments []*model.Payment
 	for rows.Next() {
-		var p model.Payment
-		if err := rows.Scan(&p.ID, &p.TripID, &p.RiderID, &p.DriverID, &p.Amount, &p.Status, &p.PaymentMethod, &p.CreatedAt, &p.CompletedAt); err != nil {
+		p, err := scanPayment(rows)
+		if err != nil {
 			return nil, 0, err
 		}
-		payments = append(payments, &p)
+		payments = append(payments, p)
 	}
-	if err = rows.Err(); err != nil {
-		return nil, 0, err
-	}
-	return payments, total, nil
+	return payments, total, rows.Err()
 }
