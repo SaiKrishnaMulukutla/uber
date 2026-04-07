@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+
+	"uber/shared/pkg/jwt"
 )
 
 var upgrader = websocket.Upgrader{
@@ -51,7 +53,20 @@ func (h *Hub) Routes() chi.Router {
 }
 
 // HandleWS upgrades the connection and subscribes it to a trip.
+// Requires a valid JWT access token passed as ?token=<jwt> (browsers cannot
+// send custom headers during a WebSocket upgrade).
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("token")
+	if raw == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	claims, err := jwt.Validate(raw)
+	if err != nil || claims.TokenType != "access" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
 	tripID := chi.URLParam(r, "id")
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

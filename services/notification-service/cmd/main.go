@@ -61,7 +61,7 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] ride.requested: trip=%s rider=%s", ev.TripID, ev.RiderID)
-		return repo.Create(ctx, ev.RiderID, "ride_requested", "Ride Requested", "Your ride is being matched with a driver.")
+		return repo.Create(ctx, ev.RiderID, "ride_requested", "Ride Requested", "Your ride is being matched with a driver.", ev.TripID+":"+ev.RiderID+":ride_requested")
 	})
 
 	kafkaClient.Subscribe(ctx, kafka.TopicDriverAssigned, "notif-driver-assigned", func(data []byte) error {
@@ -70,7 +70,7 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] driver.assigned: trip=%s driver=%s", ev.TripID, ev.DriverID)
-		return repo.Create(ctx, ev.DriverID, "driver_assigned", "New Trip Assigned", fmt.Sprintf("You have been assigned to trip %s.", ev.TripID))
+		return repo.Create(ctx, ev.DriverID, "driver_assigned", "New Trip Assigned", fmt.Sprintf("You have been assigned to trip %s.", ev.TripID), ev.TripID+":"+ev.DriverID+":driver_assigned")
 	})
 
 	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "notif-trip-completed", func(data []byte) error {
@@ -79,14 +79,14 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] trip.completed: trip=%s fare=%.2f", ev.TripID, ev.Fare)
-		if err := repo.Create(ctx, ev.RiderID, "trip_completed", "Trip Completed", fmt.Sprintf("Your trip is complete. Fare: ₹%.2f", ev.Fare)); err != nil {
+		if err := repo.Create(ctx, ev.RiderID, "trip_completed", "Trip Completed", fmt.Sprintf("Your trip is complete. Fare: ₹%.2f", ev.Fare), ev.TripID+":"+ev.RiderID+":trip_completed"); err != nil {
 			return err
 		}
 		if m != nil && ev.RiderEmail != "" {
 			_ = m.Send(ev.RiderEmail, "Your Uber trip is complete", tripCompletedEmailBody(ev.Fare))
 		}
 		if ev.DriverID != "" {
-			return repo.Create(ctx, ev.DriverID, "trip_completed", "Trip Completed", fmt.Sprintf("Trip completed. Earnings: ₹%.2f", ev.Fare))
+			return repo.Create(ctx, ev.DriverID, "trip_completed", "Trip Completed", fmt.Sprintf("Trip completed. Earnings: ₹%.2f", ev.Fare), ev.TripID+":"+ev.DriverID+":trip_completed")
 		}
 		return nil
 	})
@@ -97,14 +97,14 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] trip.cancelled: trip=%s", ev.TripID)
-		if err := repo.Create(ctx, ev.RiderID, "trip_cancelled", "Trip Cancelled", "Your trip has been cancelled."); err != nil {
+		if err := repo.Create(ctx, ev.RiderID, "trip_cancelled", "Trip Cancelled", "Your trip has been cancelled.", ev.TripID+":"+ev.RiderID+":trip_cancelled"); err != nil {
 			return err
 		}
 		if m != nil && ev.RiderEmail != "" {
 			_ = m.Send(ev.RiderEmail, "Trip Cancelled — Uber", tripCancelledEmailBody())
 		}
 		if ev.DriverID != "" {
-			return repo.Create(ctx, ev.DriverID, "trip_cancelled", "Trip Cancelled", "The trip has been cancelled.")
+			return repo.Create(ctx, ev.DriverID, "trip_cancelled", "Trip Cancelled", "The trip has been cancelled.", ev.TripID+":"+ev.DriverID+":trip_cancelled")
 		}
 		return nil
 	})
@@ -114,8 +114,12 @@ func main() {
 		if err := json.Unmarshal(data, &ev); err != nil {
 			return err
 		}
+		if ev.RateeID == "" {
+			log.Printf("[notifications] rating.submitted: skipping — empty ratee_id for trip %s", ev.TripID)
+			return nil
+		}
 		log.Printf("[notifications] rating.submitted: ratee=%s score=%d", ev.RateeID, ev.Score)
-		return repo.Create(ctx, ev.RateeID, "rating_received", "New Rating", fmt.Sprintf("You received a %d-star rating.", ev.Score))
+		return repo.Create(ctx, ev.RateeID, "rating_received", "New Rating", fmt.Sprintf("You received a %d-star rating.", ev.Score), ev.TripID+":"+ev.RateeID+":rating_received")
 	})
 
 	kafkaClient.Subscribe(ctx, kafka.TopicPaymentCompleted, "notif-payment-completed", func(data []byte) error {
@@ -124,7 +128,7 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] payment.completed: trip=%s amount=%.2f", ev.TripID, ev.Amount)
-		if err := repo.Create(ctx, ev.RiderID, "payment_completed", "Payment Processed", fmt.Sprintf("Payment of ₹%.2f has been processed for your trip.", ev.Amount)); err != nil {
+		if err := repo.Create(ctx, ev.RiderID, "payment_completed", "Payment Processed", fmt.Sprintf("Payment of ₹%.2f has been processed for your trip.", ev.Amount), ev.TripID+":"+ev.RiderID+":payment_completed"); err != nil {
 			return err
 		}
 		if m != nil && ev.RiderEmail != "" {

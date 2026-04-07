@@ -155,12 +155,22 @@ func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, ra
 	err := r.pool.QueryRow(ctx,
 		`INSERT INTO ratings (trip_id, rater_id, rater_role, ratee_id, ratee_role, score, comment)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)
+		 ON CONFLICT (trip_id, rater_id) DO NOTHING
 		 RETURNING id, trip_id, rater_id, rater_role, ratee_id, ratee_role, score, comment, created_at`,
 		tripID, raterID, raterRole, rateeID, rateeRole, score, comment).
 		Scan(&rating.ID, &rating.TripID, &rating.RaterID, &rating.RaterRole,
 			&rating.RateeID, &rating.RateeRole, &rating.Score, &rating.Comment, &rating.CreatedAt)
 	if err != nil {
-		return nil, errors.New("already rated or database error")
+		// ON CONFLICT DO NOTHING returns no rows — fetch the existing rating.
+		fetchErr := r.pool.QueryRow(ctx,
+			`SELECT id, trip_id, rater_id, rater_role, ratee_id, ratee_role, score, comment, created_at
+			 FROM ratings WHERE trip_id=$1 AND rater_id=$2`,
+			tripID, raterID).
+			Scan(&rating.ID, &rating.TripID, &rating.RaterID, &rating.RaterRole,
+				&rating.RateeID, &rating.RateeRole, &rating.Score, &rating.Comment, &rating.CreatedAt)
+		if fetchErr != nil {
+			return nil, errors.New("rating creation failed")
+		}
 	}
 	return &rating, nil
 }

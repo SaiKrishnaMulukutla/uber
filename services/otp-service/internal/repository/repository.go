@@ -101,15 +101,16 @@ func (r *redisRepo) GetSendCount(ctx context.Context, email string) (int64, erro
 	return val, err
 }
 
-// IncrRateLimit atomically increments the rate-limit counter.
-// Sets TTL only on first increment (preserves the sliding window expiry).
+// IncrRateLimit atomically increments the rate-limit counter and refreshes the
+// TTL on every call, implementing a sliding-window rate limiter.  Using Expire
+// (not ExpireNX) means the 10-minute window always resets from the most recent
+// send attempt, preventing the "wait for window to expire then send 3 more"
+// bypass that a fixed-window counter allows.
 func (r *redisRepo) IncrRateLimit(ctx context.Context, email string) error {
 	key := rateKey(email)
 	_, err := r.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		incr := pipe.Incr(ctx, key)
-		// Only set TTL when the key is newly created (count == 1)
-		pipe.ExpireNX(ctx, key, rateTTL)
-		_ = incr
+		pipe.Incr(ctx, key)
+		pipe.Expire(ctx, key, rateTTL)
 		return nil
 	})
 	return err

@@ -69,6 +69,9 @@ func parsePagination(r *http.Request) (limit, offset int) {
 			offset = o
 		}
 	}
+	if offset > 10000 {
+		offset = 10000
+	}
 	return
 }
 

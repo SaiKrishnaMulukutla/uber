@@ -32,6 +32,7 @@ type PaymentService interface {
 	// SimulateSuccess completes a payment without provider interaction (dev/testing only).
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
 
+	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
 }
@@ -59,7 +60,7 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 		paymentMethod = "cash"
 	}
 
-	p, err := s.repo.Create(ctx, tripID, riderID, driverID, paymentMethod, providerName, amount)
+	p, err := s.repo.Create(ctx, tripID, riderID, riderEmail, driverID, paymentMethod, providerName, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +78,7 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 		}
 		p.Status = model.StatusCompleted
 		p.CompletedAt = &now
-		s.publishCompleted(ctx, p, riderEmail)
+		s.publishCompleted(ctx, p)
 		log.Printf("[payments] cash payment %s completed for trip %s", p.ID, tripID)
 	}
 
@@ -118,6 +119,9 @@ func (s *paymentService) VerifyPayment(ctx context.Context, req model.VerifyRequ
 	if err != nil {
 		return nil, fmt.Errorf("payment not found: %w", err)
 	}
+	if p.Status == model.StatusCompleted {
+		return p, nil // webhook already completed this payment — idempotent
+	}
 	if p.Status != model.StatusProcessing {
 		return nil, fmt.Errorf("payment is in status %s, expected PROCESSING", p.Status)
 	}
@@ -135,7 +139,7 @@ func (s *paymentService) VerifyPayment(ctx context.Context, req model.VerifyRequ
 	p.ProviderPaymentID = req.ProviderPaymentID
 	p.CompletedAt = &now
 
-	s.publishCompleted(ctx, p, "")
+	s.publishCompleted(ctx, p)
 	return p, nil
 }
 
@@ -164,7 +168,7 @@ func (s *paymentService) HandleWebhook(ctx context.Context, body []byte, signatu
 	p.Status = model.StatusCompleted
 	p.ProviderPaymentID = result.ProviderPaymentID
 	p.CompletedAt = &now
-	s.publishCompleted(ctx, p, "")
+	s.publishCompleted(ctx, p)
 	return nil
 }
 
@@ -184,7 +188,16 @@ func (s *paymentService) SimulateSuccess(ctx context.Context, paymentID string) 
 	}
 	p.Status = model.StatusCompleted
 	p.CompletedAt = &now
-	s.publishCompleted(ctx, p, "")
+	s.publishCompleted(ctx, p)
+	return p, nil
+}
+
+// GetByPaymentID retrieves a payment by its internal UUID.
+func (s *paymentService) GetByPaymentID(ctx context.Context, id string) (*model.Payment, error) {
+	p, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, errors.New("payment not found")
+	}
 	return p, nil
 }
 
@@ -206,12 +219,12 @@ func (s *paymentService) ListByUser(ctx context.Context, userID string, limit, o
 	return &model.PaymentHistoryResponse{Payments: payments, Total: total, Limit: limit, Offset: offset}, nil
 }
 
-func (s *paymentService) publishCompleted(ctx context.Context, p *model.Payment, riderEmail string) {
+func (s *paymentService) publishCompleted(ctx context.Context, p *model.Payment) {
 	ev := kafka.PaymentCompletedEvent{
 		PaymentID:   p.ID,
 		TripID:      p.TripID,
 		RiderID:     p.RiderID,
-		RiderEmail:  riderEmail,
+		RiderEmail:  p.RiderEmail,
 		DriverID:    p.DriverID,
 		Amount:      p.Amount,
 		Status:      "COMPLETED",

@@ -20,6 +20,7 @@ import (
 // ---------- mock ----------
 
 type mockPaymentService struct {
+	GetByPaymentIDFn func(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripIDFn    func(ctx context.Context, tripID string) (*model.Payment, error)
 	ListByUserFn     func(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
 	CreateOrderFn    func(ctx context.Context, paymentID string) (*model.OrderResponse, error)
@@ -28,6 +29,12 @@ type mockPaymentService struct {
 	SimulateSuccFn   func(ctx context.Context, paymentID string) (*model.Payment, error)
 }
 
+func (m *mockPaymentService) GetByPaymentID(ctx context.Context, id string) (*model.Payment, error) {
+	if m.GetByPaymentIDFn != nil {
+		return m.GetByPaymentIDFn(ctx, id)
+	}
+	return nil, nil
+}
 func (m *mockPaymentService) GetByTripID(ctx context.Context, tripID string) (*model.Payment, error) {
 	return m.GetByTripIDFn(ctx, tripID)
 }
