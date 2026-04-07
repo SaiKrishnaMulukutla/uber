@@ -49,12 +49,9 @@ func (m *mockRepo) ResetAttempts(_ context.Context, email string) error {
 	m.attempts[email] = 0
 	return nil
 }
-func (m *mockRepo) GetSendCount(_ context.Context, email string) (int64, error) {
-	return m.rate[email], nil
-}
-func (m *mockRepo) IncrRateLimit(_ context.Context, email string) error {
+func (m *mockRepo) IncrAndCheckRateLimit(_ context.Context, email string) (int64, error) {
 	m.rate[email]++
-	return nil
+	return m.rate[email], nil
 }
 
 type mockMailer struct{ err error }
