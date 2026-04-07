@@ -175,7 +175,7 @@ uber/
 
 ```bash
 # Clone and start
-git clone <repo-url> && cd uber
+git clone https://github.com/SaiKrishnaMulukutla/uber && cd uber
 cp infra/.env.example infra/.env     # edit secrets
 make up                               # build & start all containers
 
@@ -260,8 +260,8 @@ All requests go through the gateway at **http://localhost:8000**. Every response
 curl -s -X POST http://localhost:8000/users/register \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Sai Kumar",
-    "email": "sai@test.com",
+    "name": "Sai Krishna Mulukutla",
+    "email": "saikrishnamulukutla@gmail.com",
     "phone": "+919999999999",
     "password": "Pass123!"
   }' | jq
