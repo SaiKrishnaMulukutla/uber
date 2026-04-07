@@ -26,8 +26,9 @@ type TripService interface {
 	Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	Estimate(pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
+	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
 	Rate(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
+	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
 }
 
 type tripService struct {
@@ -45,17 +46,23 @@ func (s *tripService) Request(ctx context.Context, riderID, riderEmail string, r
 	id := uuid.New().String()
 	now := time.Now()
 
+	pm := req.PaymentMethod
+	if pm == "" {
+		pm = "cash"
+	}
+
 	t := &model.Trip{
-		ID:          id,
-		RiderID:     riderID,
-		RiderEmail:  riderEmail,
-		PickupLat:   req.PickupLat,
-		PickupLng:   req.PickupLng,
-		DropLat:     req.DropLat,
-		DropLng:     req.DropLng,
-		Status:      model.StatusRequested,
-		RequestedAt: &now,
-		CreatedAt:   now,
+		ID:            id,
+		RiderID:       riderID,
+		RiderEmail:    riderEmail,
+		PickupLat:     req.PickupLat,
+		PickupLng:     req.PickupLng,
+		DropLat:       req.DropLat,
+		DropLng:       req.DropLng,
+		Status:        model.StatusRequested,
+		PaymentMethod: pm,
+		RequestedAt:   &now,
+		CreatedAt:     now,
 	}
 
 	if err := s.repo.CreateTrip(ctx, t); err != nil {
@@ -131,6 +138,7 @@ func (s *tripService) End(ctx context.Context, tripID string, distKm *float64) (
 		RiderID:         trip.RiderID,
 		RiderEmail:      trip.RiderEmail,
 		Fare:            fare,
+		PaymentMethod:   trip.PaymentMethod,
 		CompletedAt:     now.Format(time.RFC3339),
 		DurationSeconds: durSec,
 	}
@@ -181,6 +189,7 @@ func (s *tripService) Cancel(ctx context.Context, tripID, reason string) (*model
 		TripID:      tripID,
 		DriverID:    driverID,
 		RiderID:     trip.RiderID,
+		RiderEmail:  trip.RiderEmail,
 		Reason:      reason,
 		CancelledAt: now.Format(time.RFC3339),
 	}
@@ -207,9 +216,9 @@ func (s *tripService) ListByDriver(ctx context.Context, driverID string, limit, 
 	return &model.HistoryResponse{Trips: trips, Total: total, Limit: limit, Offset: offset}, nil
 }
 
-func (s *tripService) Estimate(pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
+func (s *tripService) Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
 	km := haversineKm(pickupLat, pickupLng, dropLat, dropLng)
-	surge := 1.0
+	surge := s.redis.GetSurge(ctx)
 	fare := calcFare(km) * surge
 	durationMin := calcDurationMin(km)
 	return &model.EstimateResponse{
@@ -270,6 +279,21 @@ func (s *tripService) Rate(ctx context.Context, tripID, raterID, raterRole strin
 	}
 
 	return rating, nil
+}
+
+// PushLocation validates the driver is assigned to the trip and updates Redis GEO.
+func (s *tripService) PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error {
+	trip, err := s.repo.FindByID(ctx, tripID)
+	if err != nil {
+		return errors.New("trip not found")
+	}
+	if trip.Status != model.StatusDriverAssigned && trip.Status != model.StatusStarted {
+		return errors.New("location updates only allowed during active trips")
+	}
+	if trip.DriverID == nil || *trip.DriverID != driverID {
+		return errors.New("you are not the driver on this trip")
+	}
+	return s.redis.SetDriverLocation(ctx, driverID, lat, lng)
 }
 
 func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {

@@ -93,6 +93,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       OTP_SERVICE_URL: http://otp-service:8086
       PORT: "8082"
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
     ports:
       - "8082:8082"
     depends_on:
@@ -146,11 +150,19 @@ services:
     environment:
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
+      PORT: "8087"
+    ports:
+      - "8087:8087"
     depends_on:
       redis:
         condition: service_started
       kafka:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8087/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   notification-service:
     build:
@@ -193,6 +205,10 @@ services:
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8085"
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-cash}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
     ports:
       - "8085:8085"
     depends_on:
@@ -225,6 +241,11 @@ services:
     depends_on:
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   api-gateway:
     build:

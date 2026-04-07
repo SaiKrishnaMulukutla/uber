@@ -16,13 +16,14 @@ import (
 	"uber/driver-service/config"
 	"uber/driver-service/internal/controllers"
 	"uber/driver-service/internal/model"
+	"uber/driver-service/internal/otpclient"
 	"uber/driver-service/internal/repositories"
 	"uber/driver-service/internal/service"
 	"uber/driver-service/migrations"
 	"uber/shared/pkg/db"
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/kafka"
-	"uber/driver-service/internal/otpclient"
+	"uber/shared/pkg/mailer"
 	rredis "uber/shared/pkg/redis"
 )
 
@@ -56,7 +57,13 @@ func main() {
 
 	repo := repositories.NewRepository(pool)
 	otpClient := otpclient.New(cfg.OTPServiceURL)
-	svc := service.New(repo, redisClient, otpClient)
+
+	var m mailer.Mailer
+	if cfg.EmailUser != "" && cfg.EmailPass != "" {
+		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
+	}
+
+	svc := service.New(repo, redisClient, otpClient, m)
 
 	// Kafka consumers
 	kafkaClient.Subscribe(ctx, kafka.TopicDriverAssigned, "driver-status-assigned", func(data []byte) error {

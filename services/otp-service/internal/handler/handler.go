@@ -13,6 +13,7 @@ import (
 	"uber/otp-service/internal/service"
 )
 
+
 // sixDigits validates that the OTP is exactly 6 numeric digits.
 var sixDigits = regexp.MustCompile(`^\d{6}$`)
 
@@ -23,10 +24,20 @@ type Handler struct{ svc service.OTPService }
 func New(svc service.OTPService) *Handler { return &Handler{svc: svc} }
 
 // SetupRouter mounts all OTP routes on a new Chi router.
-func SetupRouter(h *Handler) http.Handler {
+// ping is called by GET /health to verify Redis connectivity.
+func SetupRouter(h *Handler, ping func() error) http.Handler {
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := ping(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"unhealthy","service":"otp-service"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"ok","service":"otp-service"}`))
+	})
 	r.Post("/send-otp", h.SendOTP)
 	r.Post("/verify-otp", h.VerifyOTP)
 	return r

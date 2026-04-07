@@ -22,7 +22,7 @@ func main() {
 	cfg := config.Load()
 
 	if cfg.EmailUser == "" || cfg.EmailPass == "" {
-		log.Fatal("EMAIL_USER and EMAIL_PASS must be set")
+		log.Println("[otp-service] warn: EMAIL_USER/PASS not set — OTPs will be stored but not emailed")
 	}
 
 	rdb := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
@@ -38,7 +38,9 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: handler.SetupRouter(h),
+		Handler: handler.SetupRouter(h, func() error {
+			return rdb.Ping(context.Background()).Err()
+		}),
 	}
 
 	go func() {
