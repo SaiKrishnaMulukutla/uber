@@ -28,9 +28,11 @@ type Repository interface {
 	IncrAttempts(ctx context.Context, email string) (int64, error)
 	ResetAttempts(ctx context.Context, email string) error
 
-	// Rate limiting (per 10-min window)
-	GetSendCount(ctx context.Context, email string) (int64, error)
-	IncrRateLimit(ctx context.Context, email string) error
+	// IncrAndCheckRateLimit atomically increments the send counter and returns the
+	// new value. The caller rejects the request if the returned count exceeds the max.
+	// Using a Lua script makes the read-increment-check a single atomic operation,
+	// preventing concurrent requests from bypassing the limit.
+	IncrAndCheckRateLimit(ctx context.Context, email string) (int64, error)
 }
 
 type redisRepo struct{ client *redis.Client }
@@ -91,27 +93,22 @@ func (r *redisRepo) ResetAttempts(ctx context.Context, email string) error {
 	return r.client.Del(ctx, attemptsKey(email)).Err()
 }
 
-// GetSendCount returns how many OTPs have been sent in the current 10-min window.
-// Returns 0 if no key exists.
-func (r *redisRepo) GetSendCount(ctx context.Context, email string) (int64, error) {
-	val, err := r.client.Get(ctx, rateKey(email)).Int64()
-	if errors.Is(err, redis.Nil) {
-		return 0, nil
-	}
-	return val, err
-}
+// luaIncrRate is a Lua script that atomically increments the rate-limit counter
+// and resets its TTL. Executing as a single script prevents the TOCTOU race
+// where two concurrent requests both read the same count and both pass the check.
+var luaIncrRate = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+return count
+`)
 
-// IncrRateLimit atomically increments the rate-limit counter and refreshes the
-// TTL on every call, implementing a sliding-window rate limiter.  Using Expire
-// (not ExpireNX) means the 10-minute window always resets from the most recent
-// send attempt, preventing the "wait for window to expire then send 3 more"
-// bypass that a fixed-window counter allows.
-func (r *redisRepo) IncrRateLimit(ctx context.Context, email string) error {
-	key := rateKey(email)
-	_, err := r.client.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.Incr(ctx, key)
-		pipe.Expire(ctx, key, rateTTL)
-		return nil
-	})
-	return err
+// IncrAndCheckRateLimit atomically increments the sliding-window send counter
+// and returns the new value. The caller rejects if count exceeds the maximum.
+func (r *redisRepo) IncrAndCheckRateLimit(ctx context.Context, email string) (int64, error) {
+	ttlSec := int(rateTTL.Seconds())
+	res, err := luaIncrRate.Run(ctx, r.client, []string{rateKey(email)}, ttlSec).Int64()
+	if err != nil {
+		return 0, err
+	}
+	return res, nil
 }

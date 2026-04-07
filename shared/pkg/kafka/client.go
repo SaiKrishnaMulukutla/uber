@@ -13,9 +13,9 @@ import (
 
 // Well-known topic names.
 const (
-	TopicRideRequested  = "ride.requested"
-	TopicDriverAssigned = "driver.assigned"
-	TopicTripCompleted  = "trip.completed"
+	TopicRideRequested    = "ride.requested"
+	TopicDriverAssigned   = "driver.assigned"
+	TopicTripCompleted    = "trip.completed"
 	TopicTripCancelled    = "trip.cancelled"
 	TopicRatingSubmitted  = "rating.submitted"
 	TopicPaymentCompleted = "payment.completed"
@@ -87,13 +87,14 @@ func (c *Client) EnsureTopics(ctx context.Context, topics ...string) error {
 	return fmt.Errorf("kafka: could not connect after 20 attempts")
 }
 
-// Publish sends a JSON-serialised message to a topic.
 func (c *Client) Publish(ctx context.Context, topic, key string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return c.getWriter(topic).WriteMessages(ctx, kafkago.Message{
+	writeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return c.getWriter(topic).WriteMessages(writeCtx, kafkago.Message{
 		Key:   []byte(key),
 		Value: data,
 	})
@@ -113,11 +114,6 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 
 	go func() {
 		defer r.Close()
-		defer func() {
-			if p := recover(); p != nil {
-				log.Printf("[kafka] panic in consumer for %s: %v", topic, p)
-			}
-		}()
 		for {
 			msg, err := r.FetchMessage(ctx)
 			if err != nil {
@@ -128,13 +124,26 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 				time.Sleep(time.Second)
 				continue
 			}
-			if err := handler(msg.Value); err != nil {
-				log.Printf("[kafka] handler error on %s: %v", topic, err)
-				continue // don't commit — message will be redelivered
-			}
-			if err := r.CommitMessages(ctx, msg); err != nil {
-				log.Printf("[kafka] commit error on %s: %v", topic, err)
-			}
+
+			// Per-message recover: a panic commits (skips) the bad message but keeps the consumer alive.
+			func() {
+				defer func() {
+					if p := recover(); p != nil {
+						log.Printf("[kafka] panic processing message on %s (skipping): %v", topic, p)
+						// Commit to avoid infinite redelivery of a poison pill.
+						if err := r.CommitMessages(ctx, msg); err != nil {
+							log.Printf("[kafka] commit error after panic on %s: %v", topic, err)
+						}
+					}
+				}()
+				if err := handler(msg.Value); err != nil {
+					log.Printf("[kafka] handler error on %s: %v", topic, err)
+					return // don't commit — message will be redelivered
+				}
+				if err := r.CommitMessages(ctx, msg); err != nil {
+					log.Printf("[kafka] commit error on %s: %v", topic, err)
+				}
+			}()
 		}
 	}()
 }
