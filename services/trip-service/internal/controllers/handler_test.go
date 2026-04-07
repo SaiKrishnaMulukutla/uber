@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 }
 
 func tripRouter(mock *mockTripService) http.Handler {
-	h := New(mock, noopHub{})
+	h := New(mock, noopHub{}, "")
 	r := chi.NewRouter()
 	r.Use(jwt.OptionalAuth)
 	r.Mount("/trips", h.Routes())
