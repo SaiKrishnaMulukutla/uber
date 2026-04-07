@@ -15,12 +15,15 @@ import (
 
 	"uber/payment-service/config"
 	"uber/payment-service/internal/controllers"
+	cashprov "uber/payment-service/internal/provider/cash"
+	rzpprov "uber/payment-service/internal/provider/razorpay"
 	"uber/payment-service/internal/repositories"
 	"uber/payment-service/internal/service"
 	"uber/payment-service/migrations"
 	"uber/shared/pkg/db"
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/kafka"
+	"uber/payment-service/internal/provider"
 )
 
 func main() {
@@ -42,17 +45,28 @@ func main() {
 		log.Fatal(err)
 	}
 
-	repo := repositories.NewRepository(pool)
-	svc := service.NewService(repo, kafkaClient)
+	// Select payment provider based on config
+	var prov provider.PaymentProvider
+	switch cfg.PaymentProvider {
+	case "razorpay":
+		prov = rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret)
+		log.Println("[payments] using Razorpay payment provider")
+	default:
+		prov = cashprov.New()
+		log.Println("[payments] using cash payment provider")
+	}
 
-	// Kafka consumers
+	repo := repositories.NewRepository(pool)
+	svc := service.NewService(repo, kafkaClient, prov, cfg.RazorpayKeyID)
+
+	// Kafka consumer: trip.completed → create payment
 	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "payment-trip-completed", func(data []byte) error {
 		var ev kafka.TripCompletedEvent
 		if err := json.Unmarshal(data, &ev); err != nil {
 			return err
 		}
-		log.Printf("[payments] trip.completed: trip=%s fare=%.2f", ev.TripID, ev.Fare)
-		_, err := svc.CreatePayment(ctx, ev.TripID, ev.RiderID, ev.RiderEmail, ev.DriverID, ev.Fare)
+		log.Printf("[payments] trip.completed: trip=%s fare=%.2f method=%s", ev.TripID, ev.Fare, ev.PaymentMethod)
+		_, err := svc.InitPayment(ctx, ev.TripID, ev.RiderID, ev.RiderEmail, ev.DriverID, ev.PaymentMethod, ev.Fare)
 		return err
 	})
 

@@ -1,21 +1,65 @@
 {
   "info": {
     "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Base URL is pre-set to `http://localhost:8000`\n3. Run requests in order — tokens and IDs are auto-captured via test scripts\n\n**Architecture:** 6 microservices + API Gateway (NGINX :8000)\n**Flow:** Register → Login → Driver Go Online → Set Location → Request Trip → (3s wait) → Verify Assignment → Start Trip → End Trip → Rate → View Payment/Notifications",
+    "description": "Complete API collection for the Go ride-hailing microservices system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Base URL is pre-set to `http://localhost:8000`\n3. Run requests in order \u2014 tokens and IDs are auto-captured via test scripts\n\n**Architecture:** 6 microservices + API Gateway (NGINX :8000)\n**Flow:** Register \u2192 Login \u2192 Driver Go Online \u2192 Set Location \u2192 Request Trip \u2192 (3s wait) \u2192 Verify Assignment \u2192 Start Trip \u2192 End Trip \u2192 Rate \u2192 View Payment/Notifications",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",             "value": "http://localhost:8000", "type": "string" },
-    { "key": "rider_token",          "value": "", "type": "string" },
-    { "key": "rider_refresh_token",  "value": "", "type": "string" },
-    { "key": "rider_id",             "value": "", "type": "string" },
-    { "key": "driver_token",         "value": "", "type": "string" },
-    { "key": "driver_refresh_token", "value": "", "type": "string" },
-    { "key": "driver_id",            "value": "", "type": "string" },
-    { "key": "trip_id",              "value": "", "type": "string" },
-    { "key": "notification_id",      "value": "", "type": "string" },
-    { "key": "riderOTP",             "value": "", "type": "string" },
-    { "key": "driverOTP",            "value": "", "type": "string" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "rider_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "rider_refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "rider_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driver_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "trip_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notification_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "riderOTP",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "driverOTP",
+      "value": "",
+      "type": "string"
+    }
   ],
   "item": [
     {
@@ -26,15 +70,28 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] },
-            "description": "Health check served directly by NGINX — no backend involved. Confirms the gateway itself is running."
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Health check served directly by NGINX \u2014 no backend involved. Confirms the gateway itself is running."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{ \"status\": \"ok\", \"service\": \"api-gateway\" }"
             }
           ],
@@ -60,7 +117,16 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/users/health", "host": ["{{base_url}}"], "path": ["users", "health"] },
+            "url": {
+              "raw": "{{base_url}}/users/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "health"
+              ]
+            },
             "description": "Health check for user-service (routed via NGINX gateway)."
           },
           "response": [
@@ -68,7 +134,12 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{ \"status\": \"ok\", \"service\": \"user-service\" }"
             }
           ],
@@ -92,13 +163,24 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/drivers/health", "host": ["{{base_url}}"], "path": ["drivers", "health"] }
+            "url": {
+              "raw": "{{base_url}}/drivers/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "health"
+              ]
+            }
           },
           "event": [
             {
               "listen": "test",
               "script": {
-                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"],
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
                 "type": "text/javascript"
               }
             }
@@ -109,13 +191,24 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/trips/health", "host": ["{{base_url}}"], "path": ["trips", "health"] }
+            "url": {
+              "raw": "{{base_url}}/trips/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "health"
+              ]
+            }
           },
           "event": [
             {
               "listen": "test",
               "script": {
-                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"],
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
                 "type": "text/javascript"
               }
             }
@@ -126,13 +219,24 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/notifications/health", "host": ["{{base_url}}"], "path": ["notifications", "health"] }
+            "url": {
+              "raw": "{{base_url}}/notifications/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "health"
+              ]
+            }
           },
           "event": [
             {
               "listen": "test",
               "script": {
-                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"],
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
                 "type": "text/javascript"
               }
             }
@@ -143,17 +247,64 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{base_url}}/payments/health", "host": ["{{base_url}}"], "path": ["payments", "health"] }
+            "url": {
+              "raw": "{{base_url}}/payments/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "health"
+              ]
+            }
           },
           "event": [
             {
               "listen": "test",
               "script": {
-                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));"],
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
                 "type": "text/javascript"
               }
             }
           ]
+        },
+        {
+          "name": "OTP Service Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8086/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8086",
+              "path": [
+                "health"
+              ]
+            },
+            "header": []
+          }
+        },
+        {
+          "name": "Matching Service Health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:8087/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8087",
+              "path": [
+                "health"
+              ]
+            },
+            "header": []
+          }
         }
       ]
     },
@@ -164,20 +315,39 @@
           "name": "Register Rider",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Sai Kumar\",\n  \"email\": \"sai@demo.com\",\n  \"phone\": \"+919999999999\",\n  \"password\": \"Pass1234\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/register", "host": ["{{base_url}}"], "path": ["users", "register"] },
-            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2–200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
+            "url": {
+              "raw": "{{base_url}}/users/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "register"
+              ]
+            },
+            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2\u2013200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
           },
           "response": [
             {
               "name": "201 Created",
               "status": "Created",
               "code": 201,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             },
             {
@@ -215,23 +385,42 @@
           ]
         },
         {
-          "name": "Login Rider (Step 1 — send OTP)",
+          "name": "Login Rider (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"password\": \"Pass1234\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/login", "host": ["{{base_url}}"], "path": ["users", "login"] },
-            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
+            "url": {
+              "raw": "{{base_url}}/users/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "login"
+              ]
+            },
+            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
           },
           "response": [
             {
               "name": "202 Accepted",
               "status": "Accepted",
               "code": 202,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{ \"message\": \"OTP sent to sai@demo.com\" }"
             },
             {
@@ -254,23 +443,42 @@
           ]
         },
         {
-          "name": "Verify Rider Login (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Rider Login (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"otp\": \"{{riderOTP}}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/verify-login", "host": ["{{base_url}}"], "path": ["users", "verify-login"] },
-            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
+            "url": {
+              "raw": "{{base_url}}/users/verify-login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "verify-login"
+              ]
+            },
+            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"user\": {\n    \"id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n    \"name\": \"Sai Kumar\",\n    \"email\": \"sai@demo.com\",\n    \"phone\": \"+919999999999\",\n    \"rating\": 5,\n    \"rating_count\": 0\n  }\n}"
             },
             {
@@ -307,12 +515,26 @@
           "name": "Refresh Rider Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"{{rider_refresh_token}}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/refresh", "host": ["{{base_url}}"], "path": ["users", "refresh"] },
+            "url": {
+              "raw": "{{base_url}}/users/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "refresh"
+              ]
+            },
             "description": "Get a new access token using the rider's refresh token.\n\n**Note:** Run Login Rider first to populate `rider_refresh_token`."
           },
           "response": [
@@ -342,11 +564,21 @@
           "name": "Get Rider Profile",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/users/{{rider_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["users", "{{rider_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{rider_id}}"
+              ]
             },
             "description": "Fetch rider profile by ID. Must be authenticated as the same rider (IDOR protection)."
           },
@@ -395,12 +627,26 @@
           "name": "Register Driver",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"password\": \"Driver1234\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/register", "host": ["{{base_url}}"], "path": ["drivers", "register"] },
+            "url": {
+              "raw": "{{base_url}}/drivers/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "register"
+              ]
+            },
             "description": "Create a new driver account with vehicle details."
           },
           "response": [
@@ -438,23 +684,42 @@
           ]
         },
         {
-          "name": "Login Driver (Step 1 — send OTP)",
+          "name": "Login Driver (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"password\": \"Driver1234\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/login", "host": ["{{base_url}}"], "path": ["drivers", "login"] },
-            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
+            "url": {
+              "raw": "{{base_url}}/drivers/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "login"
+              ]
+            },
+            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
           },
           "response": [
             {
               "name": "202 Accepted",
               "status": "Accepted",
               "code": 202,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{ \"message\": \"OTP sent to ravi@demo.com\" }"
             },
             {
@@ -477,23 +742,42 @@
           ]
         },
         {
-          "name": "Verify Driver Login (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Driver Login (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"otp\": \"{{driverOTP}}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/verify-login", "host": ["{{base_url}}"], "path": ["drivers", "verify-login"] },
-            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
+            "url": {
+              "raw": "{{base_url}}/drivers/verify-login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "verify-login"
+              ]
+            },
+            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
               "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"status\": \"offline\",\n    \"rating\": 5,\n    \"rating_count\": 0\n  }\n}"
             },
             {
@@ -530,12 +814,26 @@
           "name": "Refresh Driver Token",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"refresh_token\": \"{{driver_refresh_token}}\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/refresh", "host": ["{{base_url}}"], "path": ["drivers", "refresh"] },
+            "url": {
+              "raw": "{{base_url}}/drivers/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "refresh"
+              ]
+            },
             "description": "Get a new access token using the driver's refresh token.\n\n**Note:** Run Login Driver first to populate `driver_refresh_token`."
           },
           "response": [
@@ -565,11 +863,21 @@
           "name": "Get Driver Profile",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{driver_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/drivers/{{driver_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["drivers", "{{driver_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "{{driver_id}}"
+              ]
             },
             "description": "Fetch driver profile by ID. Must be authenticated as the same driver (IDOR protection)."
           },
@@ -602,8 +910,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -611,8 +925,14 @@
             },
             "url": {
               "raw": "{{base_url}}/drivers/{{driver_id}}/status",
-              "host": ["{{base_url}}"],
-              "path": ["drivers", "{{driver_id}}", "status"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "{{driver_id}}",
+                "status"
+              ]
             },
             "description": "Update driver's availability status. Must be done before setting location.\n\n**Valid values:** `available`, `busy`, `offline`"
           },
@@ -644,8 +964,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -653,8 +979,14 @@
             },
             "url": {
               "raw": "{{base_url}}/drivers/{{driver_id}}/location",
-              "host": ["{{base_url}}"],
-              "path": ["drivers", "{{driver_id}}", "location"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "{{driver_id}}",
+                "location"
+              ]
             },
             "description": "Update driver's GPS position in Redis GEO set. Must be done before a rider can request a trip.\n\n**Coordinates:** Bangalore city center (12.9716, 77.5946)"
           },
@@ -691,15 +1023,37 @@
           "name": "Find Nearby Drivers",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{driver_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/drivers/nearby?lat=12.9716&lng=77.5946&radius=5",
-              "host": ["{{base_url}}"],
-              "path": ["drivers", "nearby"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "nearby"
+              ],
               "query": [
-                { "key": "lat", "value": "12.9716", "description": "Latitude" },
-                { "key": "lng", "value": "77.5946", "description": "Longitude" },
-                { "key": "radius", "value": "5", "description": "Radius in km" }
+                {
+                  "key": "lat",
+                  "value": "12.9716",
+                  "description": "Latitude"
+                },
+                {
+                  "key": "lng",
+                  "value": "77.5946",
+                  "description": "Longitude"
+                },
+                {
+                  "key": "radius",
+                  "value": "5",
+                  "description": "Radius in km"
+                }
               ]
             },
             "description": "Find available drivers within radius km using Redis GEO search.\n\n**Requires driver JWT** (driver role only)."
@@ -723,15 +1077,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
             },
-            "url": { "raw": "{{base_url}}/trips/estimate", "host": ["{{base_url}}"], "path": ["trips", "estimate"] },
-            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km"
+            "url": {
+              "raw": "{{base_url}}/trips/estimate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "estimate"
+              ]
+            },
+            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** \u20b950 (base) + \u20b912 \u00d7 distance_km"
           },
           "response": [
             {
@@ -763,15 +1132,30 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
+              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245,\n  \"payment_method\": \"cash\"\n}"
             },
-            "url": { "raw": "{{base_url}}/trips/request", "host": ["{{base_url}}"], "path": ["trips", "request"] },
-            "description": "Request a new ride. Publishes `ride.requested` to Kafka → Matching service finds driver → publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
+            "url": {
+              "raw": "{{base_url}}/trips/request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "request"
+              ]
+            },
+            "description": "Request a new ride. Publishes `ride.requested` to Kafka \u2192 Matching service finds driver \u2192 publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
           },
           "response": [
             {
@@ -808,17 +1192,27 @@
           "name": "Get Trip Details",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}"
+              ]
             },
-            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED → DRIVER_ASSIGNED → STARTED → COMPLETED / CANCELLED"
+            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED"
           },
           "response": [
             {
-              "name": "200 OK — DRIVER_ASSIGNED",
+              "name": "200 OK \u2014 DRIVER_ASSIGNED",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"fare\": 0,\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
@@ -851,8 +1245,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -860,8 +1260,14 @@
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/assign",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}", "assign"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "assign"
+              ]
             },
             "description": "Manually assign a driver to a REQUESTED trip (bypasses automatic Kafka matching)."
           },
@@ -879,12 +1285,21 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{driver_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/start",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}", "start"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "start"
+              ]
             },
             "description": "Move trip to STARTED state. Only the assigned driver can call this.\n\nPrerequisite: Trip must be in DRIVER_ASSIGNED status."
           },
@@ -912,12 +1327,54 @@
           ]
         },
         {
+          "name": "Push Driver Location (live tracking)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lat\": 17.385,\n  \"lng\": 78.4867\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "location"
+              ]
+            }
+          }
+        },
+        {
           "name": "End Trip",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{driver_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -925,10 +1382,16 @@
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/end",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}", "end"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "end"
+              ]
             },
-            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` → Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
+            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` \u2192 Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
           },
           "response": [
             {
@@ -948,7 +1411,7 @@
                   "  const body = pm.response.json();",
                   "  pm.expect(body.status).to.eql('COMPLETED');",
                   "  pm.expect(body.fare).to.be.a('number').and.above(0);",
-                  "  console.log('Fare: ₹' + body.fare);",
+                  "  console.log('Fare: \u20b9' + body.fare);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -961,8 +1424,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -970,8 +1439,14 @@
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}", "cancel"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "cancel"
+              ]
             },
             "description": "Cancel a trip (REQUESTED or DRIVER_ASSIGNED). Restores driver to Redis GEO pool and publishes `trip.cancelled` event."
           },
@@ -989,8 +1464,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{rider_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -998,10 +1479,16 @@
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/rate",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "{{trip_id}}", "rate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "rate"
+              ]
             },
-            "description": "Submit a rating (1–5) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` → Driver/User service updates average rating."
+            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` \u2192 Driver/User service updates average rating."
           },
           "response": [
             {
@@ -1037,14 +1524,32 @@
           "name": "Trip History",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/trips/history?limit=10&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["trips", "history"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "history"
+              ],
               "query": [
-                { "key": "limit", "value": "10", "description": "Results per page (max 50)" },
-                { "key": "offset", "value": "0", "description": "Pagination offset" }
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Results per page (max 50)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Pagination offset"
+                }
               ]
             },
             "description": "Get user's trip history (works for both riders and drivers)."
@@ -1067,11 +1572,21 @@
           "name": "Get Payment by Trip",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/payments/{{trip_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["payments", "{{trip_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "{{trip_id}}"
+              ]
             },
             "description": "Fetch payment details for a completed trip. Payment is auto-created ~1 second after trip ends.\n\nWait 2 seconds after End Trip before calling this."
           },
@@ -1111,14 +1626,30 @@
           "name": "Payment History",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/payments/history?limit=10&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["payments", "history"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "history"
+              ],
               "query": [
-                { "key": "limit", "value": "10" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             },
             "description": "Get user's payment history (rider or driver)."
@@ -1141,14 +1672,30 @@
           "name": "Get Notifications",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/notifications/?limit=20&offset=0",
-              "host": ["{{base_url}}"],
-              "path": ["notifications", ""],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                ""
+              ],
               "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "offset", "value": "0" }
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
               ]
             },
             "description": "Get user's notifications. Test script auto-captures the first notification ID.\n\n**Notification types:** ride_requested, driver_assigned, trip_completed, trip_cancelled, rating_submitted, payment_completed"
@@ -1158,7 +1705,7 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of ₹112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of \u20b9112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
             }
           ],
           "event": [
@@ -1183,11 +1730,22 @@
           "name": "Mark Notification as Read",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Authorization", "value": "Bearer {{rider_token}}" }],
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              }
+            ],
             "url": {
               "raw": "{{base_url}}/notifications/{{notification_id}}/read",
-              "host": ["{{base_url}}"],
-              "path": ["notifications", "{{notification_id}}", "read"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notification_id}}",
+                "read"
+              ]
             },
             "description": "Mark a notification as read.\n\n**Prerequisite:** Run Get Notifications first to auto-populate `notification_id`."
           },
@@ -1232,10 +1790,16 @@
             "header": [],
             "url": {
               "raw": "ws://localhost:8000/ws/trips/{{trip_id}}",
-              "host": ["localhost:8000"],
-              "path": ["ws", "trips", "{{trip_id}}"]
+              "host": [
+                "localhost:8000"
+              ],
+              "path": [
+                "ws",
+                "trips",
+                "{{trip_id}}"
+              ]
             },
-            "description": "**WebSocket endpoint** — real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
+            "description": "**WebSocket endpoint** \u2014 real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
           }
         }
       ]

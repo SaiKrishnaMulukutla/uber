@@ -28,6 +28,7 @@ type TripCompletedEvent struct {
 	RiderID         string  `json:"rider_id"`
 	RiderEmail      string  `json:"rider_email,omitempty"`
 	Fare            float64 `json:"fare"`
+	PaymentMethod   string  `json:"payment_method,omitempty"`
 	CompletedAt     string  `json:"completed_at"`
 	DurationSeconds int64   `json:"duration_seconds"`
 }
@@ -37,6 +38,7 @@ type TripCancelledEvent struct {
 	TripID      string `json:"trip_id"`
 	DriverID    string `json:"driver_id,omitempty"`
 	RiderID     string `json:"rider_id"`
+	RiderEmail  string `json:"rider_email,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 	CancelledAt string `json:"cancelled_at"`
 }
@@ -60,5 +62,6 @@ type PaymentCompletedEvent struct {
 	RiderEmail  string  `json:"rider_email,omitempty"`
 	DriverID    string  `json:"driver_id"`
 	Amount      float64 `json:"amount"`
+	Status      string  `json:"status,omitempty"`
 	CompletedAt string  `json:"completed_at"`
 }
