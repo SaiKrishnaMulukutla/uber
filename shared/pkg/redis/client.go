@@ -118,6 +118,21 @@ func (c *Client) GetDriverGeoPos(ctx context.Context, driverID string) (float64,
 	return positions[0].Latitude, positions[0].Longitude, nil
 }
 
+// GetSurge returns the surge multiplier from the key "surge:multiplier".
+// Falls back to 1.0 if the key is absent or unparseable.
+// Set via: redis-cli SET surge:multiplier 1.5
+func (c *Client) GetSurge(ctx context.Context) float64 {
+	val, err := c.rdb.Get(ctx, "surge:multiplier").Result()
+	if err != nil {
+		return 1.0
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil || f <= 0 {
+		return 1.0
+	}
+	return f
+}
+
 // Ping checks the Redis connection.
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()

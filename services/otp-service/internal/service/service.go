@@ -78,11 +78,11 @@ func (s *otpService) SendOTP(ctx context.Context, email string) error {
 		return fmt.Errorf("service: rate limit incr failed: %w", err)
 	}
 
-	// 7. Send OTP via email
+	// 7. Send OTP via email — log but don't fail if email is unavailable
 	subject := "Your Uber Login Code"
 	body := buildOTPEmailBody(otp)
 	if err := s.mailer.Send(email, subject, body); err != nil {
-		return fmt.Errorf("service: email send failed: %w", err)
+		fmt.Printf("[otp-service] warn: email send failed for %s: %v\n", email, err)
 	}
 
 	return nil
