@@ -100,6 +100,9 @@ func main() {
 		if err := repo.Create(ctx, ev.RiderID, "trip_cancelled", "Trip Cancelled", "Your trip has been cancelled."); err != nil {
 			return err
 		}
+		if m != nil && ev.RiderEmail != "" {
+			_ = m.Send(ev.RiderEmail, "Trip Cancelled — Uber", tripCancelledEmailBody())
+		}
 		if ev.DriverID != "" {
 			return repo.Create(ctx, ev.DriverID, "trip_cancelled", "Trip Cancelled", "The trip has been cancelled.")
 		}
@@ -166,6 +169,15 @@ func main() {
 	defer shutCancel()
 	srv.Shutdown(shutCtx)
 	cancel()
+}
+
+func tripCancelledEmailBody() string {
+	return buildEmailLayout(`
+<p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#000000;">Trip Cancelled</p>
+<p style="margin:0 0 20px;font-size:15px;color:#545454;line-height:1.6;">
+  Your trip has been cancelled. We hope to see you again soon.
+</p>
+<p style="margin:0;font-size:13px;color:#888888;">If you didn't cancel this trip, please contact support.</p>`)
 }
 
 func tripCompletedEmailBody(fare float64) string {
