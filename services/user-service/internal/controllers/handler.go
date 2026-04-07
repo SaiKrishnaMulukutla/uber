@@ -145,14 +145,16 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	// Check ownership before hitting the DB to prevent user ID enumeration
+	// via distinguishable 404 vs 403 responses.
+	claims := jwt.GetClaims(r.Context())
+	if claims == nil || claims.UserID != id {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
 	u, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
-		return
-	}
-	claims := jwt.GetClaims(r.Context())
-	if claims == nil || claims.UserID != u.ID {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
 	writeJSON(w, http.StatusOK, u)

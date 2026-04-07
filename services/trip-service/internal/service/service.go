@@ -21,9 +21,9 @@ type TripService interface {
 	Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	Start(ctx context.Context, tripID string) (*model.Trip, error)
-	End(ctx context.Context, tripID string, distKm *float64) (*model.Trip, error)
-	Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error)
+	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
+	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
 	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
@@ -43,6 +43,11 @@ func New(repo repositories.TripRepository, k *kafka.Client, r *rredis.Client) Tr
 }
 
 func (s *tripService) Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error) {
+	// Reject zero-distance trips (pickup == drop within ~11 m).
+	if haversineKm(req.PickupLat, req.PickupLng, req.DropLat, req.DropLng) < 0.01 {
+		return nil, errors.New("pickup and drop-off locations are too close")
+	}
+
 	id := uuid.New().String()
 	now := time.Now()
 
@@ -94,7 +99,14 @@ func (s *tripService) AssignDriver(ctx context.Context, tripID, driverID string)
 	return s.repo.FindByID(ctx, tripID)
 }
 
-func (s *tripService) Start(ctx context.Context, tripID string) (*model.Trip, error) {
+func (s *tripService) Start(ctx context.Context, tripID, callerID string) (*model.Trip, error) {
+	trip, err := s.repo.FindByID(ctx, tripID)
+	if err != nil {
+		return nil, err
+	}
+	if trip.DriverID == nil || *trip.DriverID != callerID {
+		return nil, errors.New("you are not the assigned driver for this trip")
+	}
 	now := time.Now()
 	if err := s.repo.StartTrip(ctx, tripID, now); err != nil {
 		return nil, err
@@ -102,10 +114,13 @@ func (s *tripService) Start(ctx context.Context, tripID string) (*model.Trip, er
 	return s.repo.FindByID(ctx, tripID)
 }
 
-func (s *tripService) End(ctx context.Context, tripID string, distKm *float64) (*model.Trip, error) {
+func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error) {
 	trip, err := s.repo.FindByID(ctx, tripID)
 	if err != nil {
 		return nil, err
+	}
+	if trip.DriverID == nil || *trip.DriverID != callerID {
+		return nil, errors.New("you are not the assigned driver for this trip")
 	}
 
 	km := 0.0
@@ -120,7 +135,9 @@ func (s *tripService) End(ctx context.Context, tripID string, distKm *float64) (
 
 	var durSec int64
 	if trip.StartedAt != nil {
-		durSec = int64(now.Sub(*trip.StartedAt).Seconds())
+		if d := now.Sub(*trip.StartedAt).Seconds(); d > 0 {
+			durSec = int64(d)
+		}
 	}
 
 	if err := s.repo.EndTrip(ctx, tripID, fare, durSec, now); err != nil {
@@ -148,19 +165,24 @@ func (s *tripService) End(ctx context.Context, tripID string, distKm *float64) (
 
 	if driverID != "" {
 		if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
-			_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+			if setErr := s.redis.SetDriverLocation(ctx, driverID, lat, lng); setErr != nil {
+				log.Printf("[trip-service] warn: could not restore driver %s to GEO after trip end: %v", driverID, setErr)
+			}
 		} else {
-			log.Printf("warn: could not restore driver %s to GEO after trip end: %v", driverID, locErr)
+			log.Printf("[trip-service] warn: no saved location for driver %s after trip end: %v", driverID, locErr)
 		}
 	}
 
 	return s.repo.FindByID(ctx, tripID)
 }
 
-func (s *tripService) Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error) {
+func (s *tripService) Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error) {
 	trip, err := s.repo.FindByID(ctx, tripID)
 	if err != nil {
 		return nil, err
+	}
+	if callerID != trip.RiderID && (trip.DriverID == nil || callerID != *trip.DriverID) {
+		return nil, errors.New("you are not a participant on this trip")
 	}
 	if trip.Status != model.StatusRequested &&
 		trip.Status != model.StatusDriverAssigned {
@@ -179,9 +201,11 @@ func (s *tripService) Cancel(ctx context.Context, tripID, reason string) (*model
 
 	if driverID != "" {
 		if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
-			_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+			if setErr := s.redis.SetDriverLocation(ctx, driverID, lat, lng); setErr != nil {
+				log.Printf("[trip-service] warn: could not restore driver %s to GEO after cancel: %v", driverID, setErr)
+			}
 		} else {
-			log.Printf("[trip-service] cancel: no saved location for driver %s", driverID)
+			log.Printf("[trip-service] warn: no saved location for driver %s after cancel: %v", driverID, locErr)
 		}
 	}
 

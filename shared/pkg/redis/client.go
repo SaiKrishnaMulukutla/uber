@@ -130,6 +130,10 @@ func (c *Client) GetSurge(ctx context.Context) float64 {
 	if err != nil || f <= 0 {
 		return 1.0
 	}
+	const maxSurge = 5.0
+	if f > maxSurge {
+		return maxSurge
+	}
 	return f
 }
 
