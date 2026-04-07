@@ -19,9 +19,9 @@ type TripServicer interface {
 	Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	Start(ctx context.Context, tripID string) (*model.Trip, error)
-	End(ctx context.Context, tripID string, distKm *float64) (*model.Trip, error)
-	Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error)
+	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
+	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
 	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
@@ -148,6 +148,11 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	if claims.Role != "driver" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can self-assign trips"})
+		return
+	}
 	var req model.AssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -155,6 +160,10 @@ func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.DriverID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driverId is required"})
+		return
+	}
+	if req.DriverID != claims.UserID {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "you can only assign yourself as driver"})
 		return
 	}
 	t, err := h.svc.AssignDriver(r.Context(), chi.URLParam(r, "id"), req.DriverID)
@@ -171,7 +180,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can start trips"})
 		return
 	}
-	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"))
+	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"), claims.UserID)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -180,6 +189,7 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
 	var req model.CancelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -189,7 +199,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason must be 500 characters or fewer"})
 		return
 	}
-	t, err := h.svc.Cancel(r.Context(), chi.URLParam(r, "id"), req.Reason)
+	t, err := h.svc.Cancel(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.Reason)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -208,7 +218,7 @@ func (h *Handler) End(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	t, err := h.svc.End(r.Context(), chi.URLParam(r, "id"), req.DistanceKm)
+	t, err := h.svc.End(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.DistanceKm)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -280,6 +290,9 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		if o, err := strconv.Atoi(v); err == nil && o >= 0 {
 			offset = o
 		}
+	}
+	if offset > 10000 {
+		offset = 10000
 	}
 	return
 }
