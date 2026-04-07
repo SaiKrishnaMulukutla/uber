@@ -137,15 +137,12 @@ echo ""
 bold "3. USER LOGIN"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 3a. Successful login
+# 3a. Successful login (OTP flow: returns 202 Accepted, OTP sent to email)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"rider_${TS}@test.com\",\"password\":\"password123\"}")
 parse_response "$RESP"
-assert_status "POST /users/login — success" "200" "$CODE"
-assert_json_field "Login returns access_token" "$BODY" ".access_token"
-assert_json_field "Login returns refresh_token" "$BODY" ".refresh_token"
-assert_json_field "Login returns user.id" "$BODY" ".user.id"
+assert_status "POST /users/login — success" "202" "$CODE"
 
 # 3b. Wrong password
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/login" \
@@ -157,7 +154,7 @@ assert_status "POST /users/login — wrong password" "401" "$CODE"
 # 3c. Non-existent email
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/users/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"nonexistent@test.com\",\"password\":\"abc\"}")
+  -d "{\"email\":\"nonexistent@test.com\",\"password\":\"wrongpass123\"}")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /users/login — email not found" "401" "$CODE"
 
@@ -284,15 +281,12 @@ echo ""
 bold "7. DRIVER LOGIN"
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 7a. Successful login
+# 7a. Successful login (OTP flow: returns 202 Accepted, OTP sent to email)
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"driver_${TS}@test.com\",\"password\":\"driverpass\"}")
 parse_response "$RESP"
-assert_status "POST /drivers/login — success" "200" "$CODE"
-assert_json_field "Driver login returns access_token" "$BODY" ".access_token"
-assert_json_field "Driver login returns refresh_token" "$BODY" ".refresh_token"
-assert_json_field "Driver login returns driver.id" "$BODY" ".driver.id"
+assert_status "POST /drivers/login — success" "202" "$CODE"
 
 # 7b. Wrong password
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
@@ -304,7 +298,7 @@ assert_status "POST /drivers/login — wrong password" "401" "$CODE"
 # 7c. Non-existent email
 RESP=$(curl -s -w "\n%{http_code}" -X POST "$BASE/drivers/login" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"nope@test.com\",\"password\":\"abc\"}")
+  -d "{\"email\":\"nope@test.com\",\"password\":\"wrongpass123\"}")
 CODE=$(echo "$RESP" | tail -n 1)
 assert_status "POST /drivers/login — email not found" "401" "$CODE"
 

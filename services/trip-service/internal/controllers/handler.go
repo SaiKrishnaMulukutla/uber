@@ -24,15 +24,24 @@ type TripServicer interface {
 	Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	Estimate(pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
+	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
 	Rate(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
+	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
+}
+
+// LocationBroadcaster pushes driver coordinates to all WebSocket subscribers of a trip.
+type LocationBroadcaster interface {
+	BroadcastLocation(tripID string, lat, lng float64)
 }
 
 // Handler exposes trip HTTP endpoints.
-type Handler struct{ svc TripServicer }
+type Handler struct {
+	svc TripServicer
+	hub LocationBroadcaster
+}
 
-// New returns a Handler wired to the given service.
-func New(svc TripServicer) *Handler { return &Handler{svc: svc} }
+// New returns a Handler wired to the given service and WebSocket hub.
+func New(svc TripServicer, hub LocationBroadcaster) *Handler { return &Handler{svc: svc, hub: hub} }
 
 // Routes returns a chi.Router with all trip routes.
 func (h *Handler) Routes() chi.Router {
@@ -49,6 +58,7 @@ func (h *Handler) Routes() chi.Router {
 	r.Patch("/{id}/start", h.Start)
 	r.Patch("/{id}/end", h.End)
 	r.Post("/{id}/rate", h.Rate)
+	r.Post("/{id}/location", h.PushLocation)
 
 	return r
 }
@@ -72,7 +82,7 @@ func (h *Handler) Estimate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
 		return
 	}
-	resp := h.svc.Estimate(req.PickupLat, req.PickupLng, req.DropLat, req.DropLng)
+	resp := h.svc.Estimate(r.Context(), req.PickupLat, req.PickupLng, req.DropLat, req.DropLng)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -204,6 +214,33 @@ func (h *Handler) End(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
+}
+
+func (h *Handler) PushLocation(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	if claims.Role != "driver" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can push location"})
+		return
+	}
+	tripID := chi.URLParam(r, "id")
+	var req struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateCoordinates(req.Lat, req.Lng) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		return
+	}
+	if err := h.svc.PushLocation(r.Context(), tripID, claims.UserID, req.Lat, req.Lng); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	h.hub.BroadcastLocation(tripID, req.Lat, req.Lng)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {

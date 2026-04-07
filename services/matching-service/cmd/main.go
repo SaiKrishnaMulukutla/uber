@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,6 +42,23 @@ func main() {
 	kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "matching-group", func(data []byte) error {
 		return matcher.HandleRideRequested(ctx, data)
 	})
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := redisClient.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"unhealthy","service":"matching-service"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"ok","service":"matching-service"}`))
+	})
+	go func() {
+		log.Printf("matching-service health endpoint on :%s", cfg.Port)
+		if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+			log.Printf("health server error: %v", err)
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
