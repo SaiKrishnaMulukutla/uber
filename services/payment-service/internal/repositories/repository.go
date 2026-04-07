@@ -11,7 +11,7 @@ import (
 
 // PaymentRepository defines all persistence operations for payments.
 type PaymentRepository interface {
-	Create(ctx context.Context, tripID, riderID, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
+	Create(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
 	MarkProcessing(ctx context.Context, id, providerOrderID string) error
 	MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error
 	MarkFailed(ctx context.Context, id, reason string) error
@@ -30,7 +30,7 @@ func NewRepository(db *pgxpool.Pool) PaymentRepository {
 	return &pgPaymentRepository{db: db}
 }
 
-const selectCols = `id, trip_id, rider_id, driver_id, amount, status, payment_method, provider,
+const selectCols = `id, trip_id, rider_id, rider_email, driver_id, amount, status, payment_method, provider,
 	COALESCE(provider_order_id, ''), COALESCE(provider_payment_id, ''), COALESCE(failure_reason, ''),
 	attempts_count, created_at, completed_at, updated_at`
 
@@ -41,7 +41,7 @@ type scanner interface {
 func scanPayment(row scanner) (*model.Payment, error) {
 	p := &model.Payment{}
 	err := row.Scan(
-		&p.ID, &p.TripID, &p.RiderID, &p.DriverID, &p.Amount, &p.Status,
+		&p.ID, &p.TripID, &p.RiderID, &p.RiderEmail, &p.DriverID, &p.Amount, &p.Status,
 		&p.PaymentMethod, &p.Provider,
 		&p.ProviderOrderID, &p.ProviderPaymentID, &p.FailureReason,
 		&p.AttemptsCount, &p.CreatedAt, &p.CompletedAt, &p.UpdatedAt,
@@ -53,12 +53,12 @@ func scanPayment(row scanner) (*model.Payment, error) {
 }
 
 // Create inserts a new PENDING payment. Returns nil, nil on duplicate trip_id (idempotent).
-func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
-	const q = `INSERT INTO payments (trip_id, rider_id, driver_id, amount, status, payment_method, provider)
-		VALUES ($1, $2, $3, $4, 'PENDING', $5, $6)
+func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
+	const q = `INSERT INTO payments (trip_id, rider_id, rider_email, driver_id, amount, status, payment_method, provider)
+		VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7)
 		ON CONFLICT (trip_id) DO NOTHING
 		RETURNING ` + selectCols
-	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, driverID, amount, paymentMethod, providerName))
+	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, riderEmail, driverID, amount, paymentMethod, providerName))
 	if err != nil {
 		// pgx returns pgx.ErrNoRows when ON CONFLICT suppresses the INSERT
 		return nil, nil //nolint:nilerr

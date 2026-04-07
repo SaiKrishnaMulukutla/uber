@@ -91,10 +91,17 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		return err
 	}
 
-	if lat, lng, posErr := geo.GetDriverGeoPos(ctx, assignedDriver); posErr == nil {
-		_ = geo.SaveDriverLocation(ctx, assignedDriver, lat, lng)
+	lat, lng, posErr := geo.GetDriverGeoPos(ctx, assignedDriver)
+	if posErr != nil {
+		log.Printf("[matching] warn: could not read geo pos for driver %s, unlocking: %v", assignedDriver, posErr)
+		_ = geo.UnlockDriver(ctx, assignedDriver)
+		return posErr
 	}
-
+	if saveErr := geo.SaveDriverLocation(ctx, assignedDriver, lat, lng); saveErr != nil {
+		log.Printf("[matching] warn: could not save location for driver %s, unlocking: %v", assignedDriver, saveErr)
+		_ = geo.UnlockDriver(ctx, assignedDriver)
+		return saveErr
+	}
 	_ = geo.RemoveDriverLocation(ctx, assignedDriver)
 
 	log.Printf("[matching] assigned driver %s → trip %s", assignedDriver, ev.TripID)

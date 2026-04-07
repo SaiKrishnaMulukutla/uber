@@ -22,9 +22,9 @@ type mockTripService struct {
 	RequestFn      func(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
 	GetByIDFn      func(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriverFn func(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	StartFn        func(ctx context.Context, tripID string) (*model.Trip, error)
-	EndFn          func(ctx context.Context, tripID string, distKm *float64) (*model.Trip, error)
-	CancelFn       func(ctx context.Context, tripID, reason string) (*model.Trip, error)
+	StartFn        func(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	EndFn          func(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
+	CancelFn       func(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRiderFn  func(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriverFn func(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
 	EstimateFn      func(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
@@ -41,14 +41,14 @@ func (m *mockTripService) GetByID(ctx context.Context, id string) (*model.Trip, 
 func (m *mockTripService) AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error) {
 	return m.AssignDriverFn(ctx, tripID, driverID)
 }
-func (m *mockTripService) Start(ctx context.Context, tripID string) (*model.Trip, error) {
-	return m.StartFn(ctx, tripID)
+func (m *mockTripService) Start(ctx context.Context, tripID, callerID string) (*model.Trip, error) {
+	return m.StartFn(ctx, tripID, callerID)
 }
-func (m *mockTripService) End(ctx context.Context, tripID string, distKm *float64) (*model.Trip, error) {
-	return m.EndFn(ctx, tripID, distKm)
+func (m *mockTripService) End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error) {
+	return m.EndFn(ctx, tripID, callerID, distKm)
 }
-func (m *mockTripService) Cancel(ctx context.Context, tripID, reason string) (*model.Trip, error) {
-	return m.CancelFn(ctx, tripID, reason)
+func (m *mockTripService) Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error) {
+	return m.CancelFn(ctx, tripID, callerID, reason)
 }
 func (m *mockTripService) ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error) {
 	return m.ListByRiderFn(ctx, riderID, limit, offset)
@@ -129,7 +129,7 @@ func TestRequest_RequiresRiderRole(t *testing.T) {
 
 func TestStart_RequiresDriverRole(t *testing.T) {
 	mock := &mockTripService{
-		StartFn: func(_ context.Context, tripID string) (*model.Trip, error) {
+		StartFn: func(_ context.Context, tripID, callerID string) (*model.Trip, error) {
 			return &model.Trip{ID: tripID, Status: "STARTED"}, nil
 		},
 	}

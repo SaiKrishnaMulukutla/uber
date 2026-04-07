@@ -13,6 +13,7 @@ type Payment struct {
 	ID                string     `json:"id"`
 	TripID            string     `json:"trip_id"`
 	RiderID           string     `json:"rider_id"`
+	RiderEmail        string     `json:"rider_email,omitempty"`
 	DriverID          string     `json:"driver_id"`
 	Amount            float64    `json:"amount"`
 	Status            string     `json:"status"`
