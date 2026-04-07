@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS trips (
     drop_lng         DOUBLE PRECISION NOT NULL,
     fare             DECIMAL(12,2),
     status           VARCHAR(30)      NOT NULL DEFAULT 'REQUESTED',
+    payment_method   VARCHAR(20)      NOT NULL DEFAULT 'cash',
     duration_seconds INTEGER,
     requested_at     TIMESTAMPTZ,
     started_at       TIMESTAMPTZ,
