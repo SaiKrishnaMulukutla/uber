@@ -1,0 +1,184 @@
+databases:
+  - name: uber-db
+    databaseName: uber
+    user: uber
+    plan: free
+
+services:
+  # ── API Gateway ────────────────────────────────────────────────────────────
+  - type: web
+    name: api-gateway
+    runtime: docker
+    dockerfilePath: ./infra/nginx.Dockerfile
+    dockerContext: ./infra
+    plan: free
+    envVars:
+      - key: USER_SERVICE_URL
+        sync: false
+      - key: DRIVER_SERVICE_URL
+        sync: false
+      - key: TRIP_SERVICE_URL
+        sync: false
+      - key: NOTIFICATION_SERVICE_URL
+        sync: false
+      - key: PAYMENT_SERVICE_URL
+        sync: false
+
+  # ── User Service ───────────────────────────────────────────────────────────
+  - type: web
+    name: user-service
+    runtime: docker
+    dockerfilePath: ./services/user-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uber-db
+          property: connectionString
+      - key: REDIS_ADDR
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+
+  # ── Driver Service ─────────────────────────────────────────────────────────
+  - type: web
+    name: driver-service
+    runtime: docker
+    dockerfilePath: ./services/driver-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uber-db
+          property: connectionString
+      - key: REDIS_ADDR
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+  # ── Trip Service ───────────────────────────────────────────────────────────
+  - type: web
+    name: trip-service
+    runtime: docker
+    dockerfilePath: ./services/trip-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uber-db
+          property: connectionString
+      - key: REDIS_ADDR
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: INTERNAL_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+  # ── Matching Service (background worker) ───────────────────────────────────
+  - type: worker
+    name: matching-service
+    runtime: docker
+    dockerfilePath: ./services/matching-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: REDIS_ADDR
+        sync: false
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: INTERNAL_SECRET
+        sync: false
+
+  # ── Notification Service ───────────────────────────────────────────────────
+  - type: web
+    name: notification-service
+    runtime: docker
+    dockerfilePath: ./services/notification-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uber-db
+          property: connectionString
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+
+  # ── Payment Service ────────────────────────────────────────────────────────
+  - type: web
+    name: payment-service
+    runtime: docker
+    dockerfilePath: ./services/payment-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: uber-db
+          property: connectionString
+      - key: KAFKA_BROKERS
+        sync: false
+      - key: KAFKA_USERNAME
+        sync: false
+      - key: KAFKA_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: PAYMENT_PROVIDER
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+

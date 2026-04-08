@@ -17,14 +17,28 @@ type Client struct {
 }
 
 // NewClient connects to Redis with retry.
+// addr may be a plain "host:port" (local) or a full rediss:// / redis:// URL (Upstash / managed).
 func NewClient(addr string) (*Client, error) {
-	rdb := goredis.NewClient(&goredis.Options{
-		Addr:         addr,
-		PoolSize:     10,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		MaxRetries:   2,
-	})
+	var rdb *goredis.Client
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		opts, err := goredis.ParseURL(addr)
+		if err != nil {
+			return nil, fmt.Errorf("redis: invalid URL: %w", err)
+		}
+		opts.PoolSize = 10
+		opts.ReadTimeout = 3 * time.Second
+		opts.WriteTimeout = 3 * time.Second
+		opts.MaxRetries = 2
+		rdb = goredis.NewClient(opts)
+	} else {
+		rdb = goredis.NewClient(&goredis.Options{
+			Addr:         addr,
+			PoolSize:     10,
+			ReadTimeout:  3 * time.Second,
+			WriteTimeout: 3 * time.Second,
+			MaxRetries:   2,
+		})
+	}
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		if err := rdb.Ping(ctx).Err(); err == nil {
@@ -73,7 +87,7 @@ func (c *Client) RemoveDriverLocation(ctx context.Context, driverID string) erro
 // can be restored to the GEO pool after trip completion or cancellation.
 func (c *Client) SaveDriverLocation(ctx context.Context, driverID string, lat, lng float64) error {
 	key := fmt.Sprintf("driver:loc:%s", driverID)
-	return c.rdb.Set(ctx, key, fmt.Sprintf("%f,%f", lat, lng), 0).Err()
+	return c.rdb.Set(ctx, key, fmt.Sprintf("%f,%f", lat, lng), 24*time.Hour).Err()
 }
 
 // GetDriverLocation retrieves the last-saved lat/lng for a driver.
@@ -98,20 +112,52 @@ func (c *Client) GetDriverLocation(ctx context.Context, driverID string) (float6
 	return lat, lng, nil
 }
 
-// CacheTrip stores trip data in a hash with TTL.
-func (c *Client) CacheTrip(ctx context.Context, tripID string, data map[string]string) error {
-	key := "trip:" + tripID
-	pipe := c.rdb.Pipeline()
-	pipe.HSet(ctx, key, data)
-	pipe.Expire(ctx, key, 24*time.Hour)
-	_, err := pipe.Exec(ctx)
-	return err
+// LockDriver attempts to acquire an exclusive lock for a driver using SETNX.
+// Returns true if the lock was acquired, false if the driver is already locked.
+func (c *Client) LockDriver(ctx context.Context, driverID string, ttl time.Duration) (bool, error) {
+	return c.rdb.SetNX(ctx, "driver:lock:"+driverID, "1", ttl).Result()
 }
 
-// GetCachedTrip retrieves a cached trip hash.
-func (c *Client) GetCachedTrip(ctx context.Context, tripID string) (map[string]string, error) {
-	return c.rdb.HGetAll(ctx, "trip:"+tripID).Result()
+// UnlockDriver releases the exclusive lock for a driver.
+func (c *Client) UnlockDriver(ctx context.Context, driverID string) error {
+	return c.rdb.Del(ctx, "driver:lock:"+driverID).Err()
 }
+
+// GetDriverGeoPos retrieves a driver's current coordinates from the GEO set.
+func (c *Client) GetDriverGeoPos(ctx context.Context, driverID string) (float64, float64, error) {
+	positions, err := c.rdb.GeoPos(ctx, "driver:locations", driverID).Result()
+	if err != nil || len(positions) == 0 || positions[0] == nil {
+		return 0, 0, fmt.Errorf("driver %s not in GEO set", driverID)
+	}
+	return positions[0].Latitude, positions[0].Longitude, nil
+}
+
+// GetSurge returns the surge multiplier from the key "surge:multiplier".
+// Falls back to 1.0 if the key is absent or unparseable.
+// Set via: redis-cli SET surge:multiplier 1.5
+func (c *Client) GetSurge(ctx context.Context) float64 {
+	val, err := c.rdb.Get(ctx, "surge:multiplier").Result()
+	if err != nil {
+		return 1.0
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil || f <= 0 {
+		return 1.0
+	}
+	const maxSurge = 5.0
+	if f > maxSurge {
+		return maxSurge
+	}
+	return f
+}
+
+// Ping checks the Redis connection.
+func (c *Client) Ping(ctx context.Context) error {
+	return c.rdb.Ping(ctx).Err()
+}
+
+// RDB returns the underlying go-redis client for packages that need direct access (e.g. otp).
+func (c *Client) RDB() goredis.UniversalClient { return c.rdb }
 
 // Close tears down the Redis connection.
 func (c *Client) Close() error { return c.rdb.Close() }
