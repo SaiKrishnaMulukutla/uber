@@ -95,3 +95,16 @@ func (d *DB) RunMigrations(ctx context.Context, migrationFS fs.FS) error {
 
 // Close shuts down the pool.
 func (d *DB) Close() { d.Pool.Close() }
+
+// MustConnect connects to Postgres, runs migrations, and returns the pool.
+// Calls log.Fatal on any error — intended for use in main/container startup.
+func MustConnect(ctx context.Context, dsn string, migrationsFS fs.FS) *pgxpool.Pool {
+	database, err := Connect(ctx, dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := database.RunMigrations(ctx, migrationsFS); err != nil {
+		log.Fatal(err)
+	}
+	return database.Pool
+}

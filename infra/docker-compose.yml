@@ -52,19 +52,27 @@ services:
   user-service:
     build:
       context: ../
-      dockerfile: user-service/Dockerfile
+      dockerfile: Dockerfile
+      target: user-service
     container_name: user-service
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/users_db?sslmode=disable
+      REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8081"
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
     ports:
       - "8081:8081"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
       kafka:
         condition: service_started
     healthcheck:
@@ -76,7 +84,8 @@ services:
   driver-service:
     build:
       context: ../
-      dockerfile: driver-service/Dockerfile
+      dockerfile: Dockerfile
+      target: driver-service
     container_name: driver-service
     restart: unless-stopped
     environment:
@@ -85,6 +94,10 @@ services:
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8082"
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
     ports:
       - "8082:8082"
     depends_on:
@@ -103,7 +116,8 @@ services:
   trip-service:
     build:
       context: ../
-      dockerfile: trip-service/Dockerfile
+      dockerfile: Dockerfile
+      target: trip-service
     container_name: trip-service
     restart: unless-stopped
     environment:
@@ -111,6 +125,8 @@ services:
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
       PORT: "8083"
     ports:
       - "8083:8083"
@@ -130,12 +146,16 @@ services:
   matching-service:
     build:
       context: ../
-      dockerfile: matching-service/Dockerfile
+      dockerfile: Dockerfile
+      target: matching-service
     container_name: matching-service
     restart: unless-stopped
     environment:
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
+      PORT: "8087"
+    ports:
+      - "8087:8087"
     depends_on:
       redis:
         condition: service_started
@@ -145,7 +165,8 @@ services:
   notification-service:
     build:
       context: ../
-      dockerfile: notification-service/Dockerfile
+      dockerfile: Dockerfile
+      target: notification-service
     container_name: notification-service
     restart: unless-stopped
     environment:
@@ -153,6 +174,10 @@ services:
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8084"
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
     ports:
       - "8084:8084"
     depends_on:
@@ -169,7 +194,8 @@ services:
   payment-service:
     build:
       context: ../
-      dockerfile: payment-service/Dockerfile
+      dockerfile: Dockerfile
+      target: payment-service
     container_name: payment-service
     restart: unless-stopped
     environment:
@@ -177,6 +203,10 @@ services:
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
       PORT: "8085"
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-cash}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
     ports:
       - "8085:8085"
     depends_on:
@@ -192,7 +222,8 @@ services:
 
   api-gateway:
     build:
-      context: ../api-gateway
+      context: .
+      dockerfile: nginx.Dockerfile
     container_name: api-gateway
     restart: unless-stopped
     ports:
