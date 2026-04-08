@@ -7,29 +7,27 @@ import (
 )
 
 type Config struct {
-	JWTSecret    string
-	DatabaseURL  string
-	RedisAddr    string
-	KafkaBrokers []string
-	Port         string
-	ResendAPIKey string
-	EmailHost    string
-	EmailPort    int
-	EmailUser    string
-	EmailPass    string
+	JWTSecret     string
+	DatabaseURL   string
+	RedisAddr     string
+	KafkaBrokers  []string
+	EmailHost     string
+	EmailPort     int
+	EmailUser     string
+	EmailPass     string
+	Port          string
 }
 
 func Load() Config {
 	return Config{
-		JWTSecret:    env.Get("JWT_SECRET", ""),
-		DatabaseURL:  env.Get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/drivers_db?sslmode=disable"),
-		RedisAddr:    env.Get("REDIS_ADDR", "localhost:6379"),
-		KafkaBrokers: strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
-		Port:         env.Get("PORT", "8082"),
-		ResendAPIKey: env.Get("RESEND_API_KEY", ""),
-		EmailHost:    env.Get("EMAIL_HOST", "smtp.gmail.com"),
-		EmailPort:    env.GetInt("EMAIL_PORT", 587),
-		EmailUser:    env.Get("EMAIL_USER", ""),
-		EmailPass:    env.Get("EMAIL_PASS", ""),
+		JWTSecret:     env.Get("JWT_SECRET", ""),
+		DatabaseURL:   env.Get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/drivers_db?sslmode=disable"),
+		RedisAddr:     env.Get("REDIS_ADDR", "localhost:6379"),
+		KafkaBrokers:  strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
+		EmailHost:     env.Get("EMAIL_HOST", "smtp.gmail.com"),
+		EmailPort:     env.GetInt("EMAIL_PORT", 587),
+		EmailUser:     env.Get("EMAIL_USER", ""),
+		EmailPass:     env.Get("EMAIL_PASS", ""),
+		Port:          env.Get("PORT", "8082"),
 	}
 }
