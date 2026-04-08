@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"uber/shared/pkg/jwt"
-	"uber/user-service/internal/otpclient"
+	"uber/shared/pkg/otp"
 	"uber/user-service/internal/model"
 )
 
@@ -164,7 +164,7 @@ func TestVerifyLogin_Success(t *testing.T) {
 func TestVerifyLogin_InvalidOTP(t *testing.T) {
 	mock := &mockUserService{
 		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otpclient.ErrInvalidOTP
+			return nil, otp.ErrInvalidOTP
 		},
 	}
 	router := userRouter(mock)
@@ -181,7 +181,7 @@ func TestVerifyLogin_InvalidOTP(t *testing.T) {
 func TestVerifyLogin_MaxAttempts(t *testing.T) {
 	mock := &mockUserService{
 		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otpclient.ErrMaxAttempts
+			return nil, otp.ErrMaxAttemptsExceeded
 		},
 	}
 	router := userRouter(mock)

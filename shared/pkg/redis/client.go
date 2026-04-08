@@ -17,14 +17,28 @@ type Client struct {
 }
 
 // NewClient connects to Redis with retry.
+// addr may be a plain "host:port" (local) or a full rediss:// / redis:// URL (Upstash / managed).
 func NewClient(addr string) (*Client, error) {
-	rdb := goredis.NewClient(&goredis.Options{
-		Addr:         addr,
-		PoolSize:     10,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-		MaxRetries:   2,
-	})
+	var rdb *goredis.Client
+	if strings.HasPrefix(addr, "redis://") || strings.HasPrefix(addr, "rediss://") {
+		opts, err := goredis.ParseURL(addr)
+		if err != nil {
+			return nil, fmt.Errorf("redis: invalid URL: %w", err)
+		}
+		opts.PoolSize = 10
+		opts.ReadTimeout = 3 * time.Second
+		opts.WriteTimeout = 3 * time.Second
+		opts.MaxRetries = 2
+		rdb = goredis.NewClient(opts)
+	} else {
+		rdb = goredis.NewClient(&goredis.Options{
+			Addr:         addr,
+			PoolSize:     10,
+			ReadTimeout:  3 * time.Second,
+			WriteTimeout: 3 * time.Second,
+			MaxRetries:   2,
+		})
+	}
 	for i := 0; i < 20; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		if err := rdb.Ping(ctx).Err(); err == nil {
@@ -141,6 +155,9 @@ func (c *Client) GetSurge(ctx context.Context) float64 {
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
 }
+
+// RDB returns the underlying go-redis client for packages that need direct access (e.g. otp).
+func (c *Client) RDB() goredis.UniversalClient { return c.rdb }
 
 // Close tears down the Redis connection.
 func (c *Client) Close() error { return c.rdb.Close() }

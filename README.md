@@ -36,7 +36,7 @@ flowchart TD
 
     subgraph Data["Data Layer"]
         PG[("PostgreSQL · 5 DBs")]
-        Redis[("Redis · GEO + locks")]
+        Redis[("Redis · GEO + OTP + locks")]
         Kafka[["Kafka KRaft · 6 topics"]]
     end
 
@@ -45,6 +45,7 @@ flowchart TD
 
     U & N & P --> PG
     D & T --> PG & Redis
+    U & D --> Redis
     T & P -->|publish| Kafka
     Kafka -->|consume| M & D & U & N & P & T
     M --> Redis
@@ -81,7 +82,6 @@ payment completed
 | matching-service | — | — |
 | notification-service | 8084 | notifications_db |
 | payment-service | 8085 | payments_db |
-| otp-service | 8086 | Redis |
 | PostgreSQL | 5433 | — |
 | Redis | 6380 | — |
 | Kafka (KRaft) | 9093 | — |
@@ -377,7 +377,7 @@ Driver-supplied distance is accepted only if within `1.5×` the straight-line (h
 
 ```bash
 # Unit tests
-go test uber/shared/... uber/otp-service/... uber/user-service/... uber/driver-service/... \
+go test uber/shared/... uber/user-service/... uber/driver-service/... \
   uber/trip-service/... uber/notification-service/... uber/payment-service/...
 
 # Build all
