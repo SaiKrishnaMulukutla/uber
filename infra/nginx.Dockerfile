@@ -14,5 +14,4 @@ RUN apk add --no-cache gettext \
 
 EXPOSE 8000
 
-# Extract the system DNS server at runtime, inject into nginx.conf, then start.
-CMD ["sh", "-c", "RESOLVER=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf) envsubst '${RESOLVER}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["sh", "-c", "envsubst '${USER_SERVICE_URL} ${DRIVER_SERVICE_URL} ${TRIP_SERVICE_URL} ${NOTIFICATION_SERVICE_URL} ${PAYMENT_SERVICE_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
