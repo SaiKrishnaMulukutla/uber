@@ -97,7 +97,7 @@
                 "health"
               ]
             },
-            "description": "Health check served directly by NGINX \u2014 no backend involved. Confirms the gateway itself is running."
+            "description": "Health check served directly by NGINX — no backend involved. Confirms the gateway itself is running."
           },
           "response": [
             {
@@ -129,24 +129,6 @@
               }
             }
           ]
-        },
-        {
-          "name": "Matching Service Health",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "http://localhost:8087/health",
-              "protocol": "http",
-              "host": [
-                "localhost"
-              ],
-              "port": "8087",
-              "path": [
-                "health"
-              ]
-            },
-            "header": []
-          }
         }
       ]
     },
@@ -154,7 +136,7 @@
       "name": "Users (Rider)",
       "item": [
         {
-          "name": "Register Rider",
+          "name": "1. Register Rider",
           "request": {
             "method": "POST",
             "header": [
@@ -177,7 +159,7 @@
                 "register"
               ]
             },
-            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2\u2013200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
+            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2–200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
           },
           "response": [
             {
@@ -227,7 +209,7 @@
           ]
         },
         {
-          "name": "Login Rider (Step 1 \u2014 send OTP)",
+          "name": "2. Login Rider (Step 1 — send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -250,7 +232,7 @@
                 "login"
               ]
             },
-            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
+            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
           },
           "response": [
             {
@@ -285,7 +267,7 @@
           ]
         },
         {
-          "name": "Verify Rider Login (Step 2 \u2014 exchange OTP for JWT)",
+          "name": "3. Verify Rider Login (Step 2 — exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -308,7 +290,7 @@
                 "verify-login"
               ]
             },
-            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
+            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
@@ -354,7 +336,7 @@
           ]
         },
         {
-          "name": "Refresh Rider Token",
+          "name": "4. Refresh Rider Token",
           "request": {
             "method": "POST",
             "header": [
@@ -403,7 +385,7 @@
           ]
         },
         {
-          "name": "Get Rider Profile",
+          "name": "5. Get Rider Profile",
           "request": {
             "method": "GET",
             "header": [
@@ -466,7 +448,7 @@
       "name": "Drivers",
       "item": [
         {
-          "name": "Register Driver",
+          "name": "1. Register Driver",
           "request": {
             "method": "POST",
             "header": [
@@ -526,7 +508,7 @@
           ]
         },
         {
-          "name": "Login Driver (Step 1 \u2014 send OTP)",
+          "name": "2. Login Driver (Step 1 — send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -549,7 +531,7 @@
                 "login"
               ]
             },
-            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
+            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
           },
           "response": [
             {
@@ -584,7 +566,7 @@
           ]
         },
         {
-          "name": "Verify Driver Login (Step 2 \u2014 exchange OTP for JWT)",
+          "name": "3. Verify Driver Login (Step 2 — exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -607,7 +589,7 @@
                 "verify-login"
               ]
             },
-            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
+            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
@@ -653,7 +635,7 @@
           ]
         },
         {
-          "name": "Refresh Driver Token",
+          "name": "4. Refresh Driver Token",
           "request": {
             "method": "POST",
             "header": [
@@ -702,7 +684,7 @@
           ]
         },
         {
-          "name": "Get Driver Profile",
+          "name": "5. Get Driver Profile",
           "request": {
             "method": "GET",
             "header": [
@@ -748,7 +730,7 @@
           ]
         },
         {
-          "name": "Update Driver Status (Go Online)",
+          "name": "6. Update Driver Status (Go Online)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -802,7 +784,7 @@
           ]
         },
         {
-          "name": "Update Driver Location",
+          "name": "7. Update Driver Location",
           "request": {
             "method": "PATCH",
             "header": [
@@ -862,7 +844,7 @@
           ]
         },
         {
-          "name": "Find Nearby Drivers",
+          "name": "8. Find Nearby Drivers",
           "request": {
             "method": "GET",
             "header": [
@@ -915,7 +897,7 @@
       "name": "Trips",
       "item": [
         {
-          "name": "Estimate Fare",
+          "name": "1. Estimate Fare",
           "request": {
             "method": "POST",
             "header": [
@@ -942,7 +924,7 @@
                 "estimate"
               ]
             },
-            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** \u20b950 (base) + \u20b912 \u00d7 distance_km"
+            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km"
           },
           "response": [
             {
@@ -970,7 +952,7 @@
           ]
         },
         {
-          "name": "Request Trip",
+          "name": "2. Request Trip",
           "request": {
             "method": "POST",
             "header": [
@@ -997,7 +979,7 @@
                 "request"
               ]
             },
-            "description": "Request a new ride. Publishes `ride.requested` to Kafka \u2192 Matching service finds driver \u2192 publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
+            "description": "Request a new ride. Publishes `ride.requested` to Kafka → Matching service finds driver → publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
           },
           "response": [
             {
@@ -1031,7 +1013,7 @@
           ]
         },
         {
-          "name": "Get Trip Details",
+          "name": "3. Get Trip Details",
           "request": {
             "method": "GET",
             "header": [
@@ -1050,11 +1032,11 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED"
+            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED → DRIVER_ASSIGNED → STARTED → COMPLETED / CANCELLED"
           },
           "response": [
             {
-              "name": "200 OK \u2014 DRIVER_ASSIGNED",
+              "name": "200 OK — DRIVER_ASSIGNED",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"fare\": 0,\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
@@ -1083,7 +1065,7 @@
           ]
         },
         {
-          "name": "Assign Driver (Internal Override)",
+          "name": "4. Assign Driver (Internal Override)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1130,7 +1112,7 @@
           ]
         },
         {
-          "name": "Start Trip",
+          "name": "5. Start Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1176,7 +1158,7 @@
           ]
         },
         {
-          "name": "Push Driver Location (live tracking)",
+          "name": "6. Push Driver Location (live tracking)",
           "request": {
             "method": "POST",
             "header": [
@@ -1232,7 +1214,7 @@
           ]
         },
         {
-          "name": "End Trip",
+          "name": "7. End Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1260,7 +1242,7 @@
                 "end"
               ]
             },
-            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` \u2192 Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
+            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` → Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
           },
           "response": [
             {
@@ -1280,7 +1262,7 @@
                   "  const body = pm.response.json();",
                   "  pm.expect(body.status).to.eql('COMPLETED');",
                   "  pm.expect(body.fare).to.be.a('number').and.above(0);",
-                  "  console.log('Fare: \u20b9' + body.fare);",
+                  "  console.log('Fare: ₹' + body.fare);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -1289,7 +1271,68 @@
           ]
         },
         {
-          "name": "Cancel Trip",
+          "name": "8. Rate Trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/{{trip_id}}/rate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "{{trip_id}}",
+                "rate"
+              ]
+            },
+            "description": "Submit a rating (1–5) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` → Driver/User service updates average rating."
+          },
+          "response": [
+            {
+              "name": "201 Created",
+              "status": "Created",
+              "code": 201,
+              "body": "{\n  \"id\": \"r1a2t3i4-0000-0000-0000-000000000000\",\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rater_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"rater_role\": \"rider\",\n  \"ratee_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"ratee_role\": \"driver\",\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\",\n  \"created_at\": \"2026-03-08T10:30:00Z\"\n}"
+            },
+            {
+              "name": "400 Already Rated",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"already rated\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Rating fields present', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.include.all.keys('id','trip_id','rater_id','ratee_id','score');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9. Cancel Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1329,68 +1372,7 @@
           ]
         },
         {
-          "name": "Rate Trip",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{rider_token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/trips/{{trip_id}}/rate",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "trips",
-                "{{trip_id}}",
-                "rate"
-              ]
-            },
-            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` \u2192 Driver/User service updates average rating."
-          },
-          "response": [
-            {
-              "name": "201 Created",
-              "status": "Created",
-              "code": 201,
-              "body": "{\n  \"id\": \"r1a2t3i4-0000-0000-0000-000000000000\",\n  \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rater_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"rater_role\": \"rider\",\n  \"ratee_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"ratee_role\": \"driver\",\n  \"score\": 5,\n  \"comment\": \"Great driver, very polite!\",\n  \"created_at\": \"2026-03-08T10:30:00Z\"\n}"
-            },
-            {
-              "name": "400 Already Rated",
-              "status": "Bad Request",
-              "code": 400,
-              "body": "{ \"error\": \"already rated\" }"
-            }
-          ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
-                  "pm.test('Rating fields present', () => {",
-                  "  const body = pm.response.json();",
-                  "  pm.expect(body).to.include.all.keys('id','trip_id','rater_id','ratee_id','score');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
-        },
-        {
-          "name": "Trip History",
+          "name": "10. Trip History",
           "request": {
             "method": "GET",
             "header": [
@@ -1438,7 +1420,7 @@
       "name": "Payments",
       "item": [
         {
-          "name": "Get Payment by Trip",
+          "name": "1. Get Payment by Trip",
           "request": {
             "method": "GET",
             "header": [
@@ -1495,7 +1477,66 @@
           ]
         },
         {
-          "name": "Create Razorpay Order",
+          "name": "2. Simulate Payment Success (dev)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payments/simulate-success",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "simulate-success"
+              ]
+            },
+            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka → triggers in-app notification and email to rider."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-03-08T10:25:05Z\"\n}"
+            },
+            {
+              "name": "400 Already Completed",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"payment already completed\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Payment completed', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Create Razorpay Order",
           "request": {
             "method": "POST",
             "header": [
@@ -1561,7 +1602,7 @@
           ]
         },
         {
-          "name": "Verify Razorpay Payment",
+          "name": "4. Verify Razorpay Payment",
           "request": {
             "method": "POST",
             "header": [
@@ -1620,66 +1661,7 @@
           ]
         },
         {
-          "name": "Simulate Payment Success (dev)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{rider_token}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/payments/simulate-success",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "payments",
-                "simulate-success"
-              ]
-            },
-            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka → triggers in-app notification and email to rider."
-          },
-          "response": [
-            {
-              "name": "200 OK",
-              "status": "OK",
-              "code": 200,
-              "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-03-08T10:25:05Z\"\n}"
-            },
-            {
-              "name": "400 Already Completed",
-              "status": "Bad Request",
-              "code": 400,
-              "body": "{ \"error\": \"payment already completed\" }"
-            }
-          ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Payment completed', () => {",
-                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
-        },
-        {
-          "name": "Payment History",
+          "name": "5. Payment History",
           "request": {
             "method": "GET",
             "header": [
@@ -1725,7 +1707,7 @@
       "name": "Notifications",
       "item": [
         {
-          "name": "Get Notifications",
+          "name": "1. Get Notifications",
           "request": {
             "method": "GET",
             "header": [
@@ -1761,7 +1743,7 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of \u20b9112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of ₹112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
             }
           ],
           "event": [
@@ -1783,7 +1765,7 @@
           ]
         },
         {
-          "name": "Mark Notification as Read",
+          "name": "2. Mark Notification as Read",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1855,7 +1837,7 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "**WebSocket endpoint** \u2014 real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
+            "description": "**WebSocket endpoint** — real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
           }
         }
       ]
