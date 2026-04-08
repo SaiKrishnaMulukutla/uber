@@ -34,9 +34,7 @@ func main() {
 	}
 
 	var m mailer.Mailer
-	if cfg.ResendAPIKey != "" {
-		m = mailer.NewAsync(mailer.NewResend(cfg.ResendAPIKey, "Uber <onboarding@resend.dev>"), 5)
-	} else if cfg.EmailUser != "" && cfg.EmailPass != "" {
+	if cfg.EmailUser != "" && cfg.EmailPass != "" {
 		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
 	}
 
