@@ -16,7 +16,7 @@ import (
 	"uber/driver-service/config"
 	"uber/driver-service/internal/controllers"
 	"uber/driver-service/internal/model"
-	"uber/driver-service/internal/otpclient"
+	"uber/shared/pkg/otp"
 	"uber/driver-service/internal/repositories"
 	"uber/driver-service/internal/service"
 	"uber/driver-service/migrations"
@@ -56,13 +56,13 @@ func main() {
 	}
 
 	repo := repositories.NewRepository(pool)
-	otpClient := otpclient.New(cfg.OTPServiceURL)
 
 	var m mailer.Mailer
 	if cfg.EmailUser != "" && cfg.EmailPass != "" {
 		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
 	}
 
+	otpClient := otp.New(redisClient.RDB(), m)
 	svc := service.New(repo, redisClient, otpClient, m)
 
 	// Kafka consumers

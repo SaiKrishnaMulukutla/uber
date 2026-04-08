@@ -17,12 +17,13 @@ import (
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/kafka"
 	"uber/shared/pkg/mailer"
-	"uber/user-service/internal/otpclient"
+	"uber/shared/pkg/otp"
+	rredis "uber/shared/pkg/redis"
 	"uber/user-service/config"
 	"uber/user-service/internal/controllers"
-	"uber/user-service/migrations"
 	"uber/user-service/internal/repositories"
 	"uber/user-service/internal/service"
+	"uber/user-service/migrations"
 )
 
 func main() {
@@ -36,19 +37,25 @@ func main() {
 
 	pool := db.MustConnect(ctx, cfg.DatabaseURL, migrations.FS)
 
+	redisClient, err := rredis.NewClient(cfg.RedisAddr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer redisClient.Close()
+
 	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 	if err := kafkaClient.EnsureTopics(ctx, kafka.TopicRatingSubmitted); err != nil {
 		log.Fatal(err)
 	}
 
 	repo := repositories.NewRepository(pool)
-	otpClient := otpclient.New(cfg.OTPServiceURL)
 
 	var m mailer.Mailer
 	if cfg.EmailUser != "" && cfg.EmailPass != "" {
 		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
 	}
 
+	otpClient := otp.New(redisClient.RDB(), m)
 	svc := service.NewService(repo, otpClient, m)
 
 	// Kafka consumers
