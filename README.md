@@ -1,6 +1,44 @@
 # Uber — Ride-Hailing Backend
 
-Distributed ride-hailing system built with Go microservices, event-driven architecture (Kafka), geospatial matching (Redis GEO), and PostgreSQL — orchestrated via Docker Compose with an NGINX API gateway.
+<p align="center">
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Kafka-KRaft-231F20?style=flat&logo=apachekafka&logoColor=white" />
+  <img src="https://img.shields.io/badge/Redis-GEO-DC382D?style=flat&logo=redis&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-5-336791?style=flat&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat" />
+</p>
+
+A production-style ride-hailing backend built with Go microservices, event-driven architecture (Kafka), geospatial driver matching (Redis GEO), PostgreSQL, and an NGINX API gateway — all orchestrated via Docker Compose.
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Services](#services)
+- [Kafka Topics](#kafka-topics)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+- [End-to-End Flow](#end-to-end-flow)
+- [Payment Flow](#payment-flow)
+- [State Machines](#state-machines)
+- [Testing](#testing)
+
+---
+
+## Features
+
+- **OTP-based 2FA login** — email/password + 6-digit OTP via SMTP for both riders and drivers
+- **Geospatial driver matching** — Redis GEO `GEORADIUS` search finds the nearest available driver and assigns via Kafka
+- **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
+- **Multi-provider payments** — pluggable cash (default) or Razorpay; HMAC-verified webhooks for async confirmation
+- **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
+- **Event-driven consistency** — 6 Kafka topics decouple all services; no cross-service foreign keys
+- **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
+- **Surge pricing** — fare multiplier computed server-side, capped at 5×
+- **Idempotent webhook handling** — duplicate Razorpay events are no-ops
 
 ---
 
@@ -36,7 +74,7 @@ flowchart TD
 
     subgraph Data["Data Layer"]
         PG[("PostgreSQL · 5 DBs")]
-        Redis[("Redis · GEO + OTP + locks")]
+        Redis[("Redis · GEO + locks")]
         Kafka[["Kafka KRaft · 6 topics"]]
     end
 
@@ -60,13 +98,13 @@ POST /trips/request
                                └─► driver.assigned ──► trip-service, driver-service, notification-service
 
 PATCH /trips/:id/end
-    └─► trip.completed ──► payment-service, driver-service, notification-service
+    └─► trip.completed ──► payment-service, driver-service, notification-service (+ email to rider)
 
 POST /trips/:id/rate
     └─► rating.submitted ──► driver-service, user-service, notification-service
 
 payment completed
-    └─► payment.completed ──► notification-service
+    └─► payment.completed ──► notification-service (+ email to rider)
 ```
 
 ---
@@ -86,6 +124,8 @@ payment completed
 | Redis | 6380 | — |
 | Kafka (KRaft) | 9093 | — |
 
+---
+
 ## Kafka Topics
 
 | Topic | Publisher | Consumers |
@@ -101,80 +141,86 @@ payment completed
 
 ## Quick Start
 
-**Prerequisites:** Docker, Docker Compose, Go 1.21+
+**Prerequisites:** Docker, Docker Compose, Go 1.22+
 
 ```bash
 git clone https://github.com/SaiKrishnaMulukutla/uber && cd uber
 cp infra/.env.example infra/.env
-# edit infra/.env — set POSTGRES_PASSWORD, JWT_SECRET, and EMAIL_* for OTP delivery
+# Edit infra/.env — set POSTGRES_PASSWORD, JWT_SECRET, and EMAIL_* values
 make up
 ```
 
-Services start in order. PostgreSQL and Kafka initialise first (~30s); application services connect and run migrations automatically.
+Services start in dependency order. PostgreSQL and Kafka initialise first (~30 s); application services connect and run schema migrations automatically.
 
 ```bash
 make logs          # tail all service logs
 make logs-trip     # tail a specific service
-make down          # stop
+make down          # stop all containers
 make clean         # stop + wipe volumes
 ```
 
-### Environment
+### Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `POSTGRES_PASSWORD` | yes | PostgreSQL password |
-| `JWT_SECRET` | yes | HS256 signing key (`openssl rand -base64 32`) |
-| `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USER` / `EMAIL_PASS` | yes | SMTP for OTP delivery |
+| `POSTGRES_PASSWORD` | yes | PostgreSQL superuser password |
+| `JWT_SECRET` | yes | HS256 signing key — generate with `openssl rand -base64 32` |
+| `EMAIL_HOST` | yes | SMTP host (e.g. `smtp.gmail.com`) |
+| `EMAIL_PORT` | yes | SMTP port (e.g. `587` for STARTTLS) |
+| `EMAIL_USER` | yes | SMTP username / sender address |
+| `EMAIL_PASS` | yes | SMTP password or app password |
 | `PAYMENT_PROVIDER` | no | `cash` (default) or `razorpay` |
-| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` | if razorpay | Razorpay API credentials |
-| `RAZORPAY_WEBHOOK_SECRET` | if razorpay | Webhook signing secret from Razorpay dashboard |
-| `INTERNAL_SECRET` | no | Shared secret for service-to-service calls (`openssl rand -base64 32`) |
+| `RAZORPAY_KEY_ID` | if razorpay | Razorpay API key ID |
+| `RAZORPAY_KEY_SECRET` | if razorpay | Razorpay API key secret |
+| `RAZORPAY_WEBHOOK_SECRET` | if razorpay | Webhook signing secret from Razorpay Dashboard |
+| `INTERNAL_SECRET` | no | Shared secret for service-to-service calls |
 | `ALLOWED_ORIGINS` | no | Comma-separated WebSocket origin allowlist (empty = allow all, dev only) |
+
+> **Email usage:** `EMAIL_*` serves two purposes — OTP delivery (otp-service) and HTML notification emails on trip completion, trip cancellation, and payment confirmation (notification-service).
 
 ---
 
 ## API Reference
 
-All requests route through **`http://localhost:8000`**. Authentication via `Authorization: Bearer <token>`.
+All requests route through **`http://localhost:8000`**. Authenticated endpoints require `Authorization: Bearer <access_token>`.
 
 ### Users — `/users`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/users/register` | — | Register rider, returns JWT |
+| POST | `/users/register` | — | Register rider; returns JWT tokens |
 | POST | `/users/login` | — | Step 1: validate password, send OTP |
 | POST | `/users/verify-login` | — | Step 2: verify OTP, issue JWT |
-| POST | `/users/refresh` | — | Rotate access token |
-| GET | `/users/{id}` | Bearer (rider) | Get own profile |
+| POST | `/users/refresh` | — | Rotate access token using refresh token |
+| GET | `/users/{id}` | Bearer (rider) | Get own profile (IDOR protected) |
 
 ### Drivers — `/drivers`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/drivers/register` | — | Register driver, returns JWT |
+| POST | `/drivers/register` | — | Register driver with vehicle details |
 | POST | `/drivers/login` | — | Step 1: validate password, send OTP |
 | POST | `/drivers/verify-login` | — | Step 2: verify OTP, issue JWT |
 | POST | `/drivers/refresh` | — | Rotate access token |
 | GET | `/drivers/{id}` | Bearer (driver) | Get own profile |
-| PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location |
-| PATCH | `/drivers/{id}/status` | Bearer (driver) | Set online / offline |
-| GET | `/drivers/nearby` | Bearer | Find nearby available drivers |
+| PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location in Redis GEO |
+| PATCH | `/drivers/{id}/status` | Bearer (driver) | Set `available` / `offline` |
+| GET | `/drivers/nearby` | Bearer | Find available drivers within radius |
 
 ### Trips — `/trips`
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/trips/estimate` | Bearer (rider) | Fare + duration estimate |
-| POST | `/trips/request` | Bearer (rider) | Request a ride |
+| POST | `/trips/estimate` | Bearer (rider) | Fare + duration estimate (no side effects) |
+| POST | `/trips/request` | Bearer (rider) | Request a ride; triggers Kafka matching |
 | GET | `/trips/history` | Bearer | Paginated trip history |
 | GET | `/trips/{id}` | Bearer | Trip details (participants only) |
-| PATCH | `/trips/{id}/assign` | X-Internal-Secret | Internal — matching-service only |
+| PATCH | `/trips/{id}/assign` | `X-Internal-Secret` | Internal — matching-service only |
 | PATCH | `/trips/{id}/start` | Bearer (driver) | Start trip |
-| PATCH | `/trips/{id}/end` | Bearer (driver) | End trip, compute fare |
-| PATCH | `/trips/{id}/cancel` | Bearer | Cancel trip |
-| POST | `/trips/{id}/rate` | Bearer | Rate counterpart (1–5) |
-| POST | `/trips/{id}/location` | Bearer (driver) | Push live location |
+| PATCH | `/trips/{id}/end` | Bearer (driver) | End trip; computes fare |
+| PATCH | `/trips/{id}/cancel` | Bearer | Cancel trip; restores driver to GEO pool |
+| POST | `/trips/{id}/rate` | Bearer | Rate counterpart (1–5 stars) |
+| POST | `/trips/{id}/location` | Bearer (driver) | Push live GPS coordinate |
 | WS | `/ws/trips/{id}?token=<jwt>` | JWT query param | Real-time driver location stream |
 
 ### Notifications — `/notifications`
@@ -182,7 +228,7 @@ All requests route through **`http://localhost:8000`**. Authentication via `Auth
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/notifications/` | Bearer | Paginated notification list |
-| PATCH | `/notifications/{id}/read` | Bearer | Mark as read |
+| PATCH | `/notifications/{id}/read` | Bearer | Mark notification as read |
 
 ### Payments — `/payments`
 
@@ -193,7 +239,7 @@ All requests route through **`http://localhost:8000`**. Authentication via `Auth
 | POST | `/payments/orders` | Bearer (rider) | Create Razorpay order → returns `provider_order_id` + `key_id` |
 | POST | `/payments/verify` | Bearer (rider) | Submit Razorpay signature → completes payment |
 | POST | `/payments/webhook` | HMAC | Razorpay async backup confirmation |
-| POST | `/payments/simulate-success` | Bearer | Complete payment without provider (dev/test) |
+| POST | `/payments/simulate-success` | Bearer | Complete payment without a provider (dev / test) |
 
 ---
 
@@ -229,11 +275,11 @@ curl -s -X PATCH $BASE/drivers/$DRIVER_ID/location \
 TRIP=$(curl -s -X POST $BASE/trips/request \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245}')
+  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"cash"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
-# 4. Wait for automatic matching
-sleep 5
+# 4. Wait for automatic matching (~3 s)
+sleep 3
 curl -s $BASE/trips/$TRIP_ID \
   -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,driver_id}'
 
@@ -268,12 +314,13 @@ curl -s $BASE/payments/$TRIP_ID \
 ```
 PATCH /trips/{id}/end
   └─► trip.completed (Kafka)
-        └─► payment-service: INSERT status=PENDING
-              └─► immediately COMPLETED
-                    └─► payment.completed (Kafka) ──► notification email
+        └─► payment-service: INSERT status=PENDING → COMPLETED
+              └─► payment.completed (Kafka) ──► notification-service
+                                                  ├─ in-app notification
+                                                  └─ email to rider
 ```
 
-No frontend steps required. The payment completes automatically.
+No frontend steps required. Payment completes automatically.
 
 ### Card (Razorpay)
 
@@ -295,25 +342,20 @@ No frontend steps required. The payment completes automatically.
          amount:   amount * 100,   // paise
          currency: "INR",
          handler(response) {
-           // response.razorpay_payment_id
-           // response.razorpay_order_id
-           // response.razorpay_signature
-           POST /payments/verify ← above fields + payment_id
+           POST /payments/verify ← razorpay_payment_id + razorpay_order_id + razorpay_signature + payment_id
          }
        }).open()
 
 [5]  POST /payments/verify
-       { payment_id, provider_order_id, provider_payment_id, signature }
        ← HMAC-SHA256(order_id|payment_id) verified against key_secret
-       ← status=COMPLETED → payment.completed (Kafka) → notification email
+       ← status=COMPLETED → payment.completed (Kafka) → email + in-app notification
 
 [6]  Backup — Razorpay webhook (async, if browser closes before step 5)
        POST /payments/webhook  X-Razorpay-Signature: <hmac>
-       ← HMAC-SHA256(body) verified against webhook_secret
        ← idempotent: no-op if already COMPLETED
 ```
 
-### Simulate (dev/test, no Razorpay keys needed)
+### Simulate (dev / test — no Razorpay keys needed)
 
 ```bash
 PAYMENT_ID=$(curl -s $BASE/payments/$TRIP_ID \
@@ -339,7 +381,7 @@ Configure the webhook URL in the [Razorpay Dashboard](https://dashboard.razorpay
 - **URL:** `https://your-domain.com/payments/webhook`
 - **Event:** `payment.captured`
 
-For local testing use `ngrok http 8000` to get a public HTTPS URL.
+For local testing use `ngrok http 8000` to expose a public HTTPS URL.
 
 ---
 
@@ -358,12 +400,12 @@ REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
 
 ```
 PENDING ──► PROCESSING ──► COMPLETED
-  │               │              └─ payment.completed published
+  │               │              └─ payment.completed published → email sent
   │               └─────────────► FAILED
   └─ cash / simulate ──────────► COMPLETED  (skips PROCESSING)
 ```
 
-### Fare
+### Fare Formula
 
 ```
 ₹50 base  +  ₹12 × distance_km  ×  surge_multiplier  (capped at 5×)
@@ -376,13 +418,18 @@ Driver-supplied distance is accepted only if within `1.5×` the straight-line (h
 ## Testing
 
 ```bash
-# Unit tests
+# Unit + integration tests
 go test uber/shared/... uber/user-service/... uber/driver-service/... \
   uber/trip-service/... uber/notification-service/... uber/payment-service/...
 
-# Build all
+# Build all services
 make build
+
+# End-to-end (requires stack running)
+bash test/test_all.sh
 ```
+
+Import `test/postman_collection.json` into Postman for a complete interactive API tour with auto-captured tokens and IDs.
 
 ---
 
