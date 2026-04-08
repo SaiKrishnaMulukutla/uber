@@ -58,7 +58,9 @@ func main() {
 	repo := repositories.NewRepository(pool)
 
 	var m mailer.Mailer
-	if cfg.EmailUser != "" && cfg.EmailPass != "" {
+	if cfg.ResendAPIKey != "" {
+		m = mailer.NewAsync(mailer.NewResend(cfg.ResendAPIKey, "Uber <onboarding@resend.dev>"), 5)
+	} else if cfg.EmailUser != "" && cfg.EmailPass != "" {
 		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
 	}
 
