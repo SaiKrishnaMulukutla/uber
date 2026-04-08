@@ -2,13 +2,16 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"sync"
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
 // Well-known topic names.
@@ -23,13 +26,37 @@ const (
 
 // Client wraps Kafka operations.
 type Client struct {
-	brokers []string
-	writers sync.Map // topic -> *kafkago.Writer
+	brokers   []string
+	dialer    *kafkago.Dialer
+	transport kafkago.RoundTripper
+	writers   sync.Map // topic -> *kafkago.Writer
 }
 
-// NewClient returns a Client connected to the given brokers.
+// NewClient returns a Kafka client. If KAFKA_USERNAME and KAFKA_PASSWORD env
+// vars are set it automatically uses SASL SCRAM-SHA-256 over TLS (Redpanda /
+// Upstash / Confluent). Otherwise it connects plainly for local dev.
 func NewClient(brokers []string) *Client {
-	return &Client{brokers: brokers}
+	username := os.Getenv("KAFKA_USERNAME")
+	password := os.Getenv("KAFKA_PASSWORD")
+	if username != "" && password != "" {
+		mechanism, err := scram.Mechanism(scram.SHA256, username, password)
+		if err != nil {
+			log.Fatalf("[kafka] SASL mechanism init failed: %v", err)
+		}
+		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		return &Client{
+			brokers: brokers,
+			dialer: &kafkago.Dialer{
+				SASLMechanism: mechanism,
+				TLS:           tlsCfg,
+			},
+			transport: &kafkago.Transport{
+				SASL: mechanism,
+				TLS:  tlsCfg,
+			},
+		}
+	}
+	return &Client{brokers: brokers, dialer: kafkago.DefaultDialer}
 }
 
 // getWriter returns a cached writer for the topic, creating one if needed.
@@ -38,9 +65,10 @@ func (c *Client) getWriter(topic string) *kafkago.Writer {
 		return v.(*kafkago.Writer)
 	}
 	w := &kafkago.Writer{
-		Addr:     kafkago.TCP(c.brokers...),
-		Topic:    topic,
-		Balancer: &kafkago.LeastBytes{},
+		Addr:      kafkago.TCP(c.brokers...),
+		Topic:     topic,
+		Balancer:  &kafkago.LeastBytes{},
+		Transport: c.transport,
 	}
 	actual, _ := c.writers.LoadOrStore(topic, w)
 	if actual != w {
@@ -60,7 +88,7 @@ func (c *Client) Close() {
 // EnsureTopics creates topics if they don't already exist (with retry).
 func (c *Client) EnsureTopics(ctx context.Context, topics ...string) error {
 	for attempt := 1; attempt <= 20; attempt++ {
-		conn, err := kafkago.DialContext(ctx, "tcp", c.brokers[0])
+		conn, err := c.dialer.DialContext(ctx, "tcp", c.brokers[0])
 		if err != nil {
 			log.Printf("Kafka not ready, retrying in 3s... (%d/20)", attempt)
 			time.Sleep(3 * time.Second)
@@ -108,6 +136,7 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 		Brokers:  c.brokers,
 		Topic:    topic,
 		GroupID:  groupID,
+		Dialer:   c.dialer,
 		MinBytes: 1,
 		MaxBytes: 10e6,
 	})
@@ -130,7 +159,6 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 				defer func() {
 					if p := recover(); p != nil {
 						log.Printf("[kafka] panic processing message on %s (skipping): %v", topic, p)
-						// Commit to avoid infinite redelivery of a poison pill.
 						if err := r.CommitMessages(ctx, msg); err != nil {
 							log.Printf("[kafka] commit error after panic on %s: %v", topic, err)
 						}
@@ -138,7 +166,7 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 				}()
 				if err := handler(msg.Value); err != nil {
 					log.Printf("[kafka] handler error on %s: %v", topic, err)
-					return // don't commit — message will be redelivered
+					return
 				}
 				if err := r.CommitMessages(ctx, msg); err != nil {
 					log.Printf("[kafka] commit error on %s: %v", topic, err)

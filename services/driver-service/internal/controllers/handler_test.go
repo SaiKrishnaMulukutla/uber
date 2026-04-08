@@ -14,7 +14,7 @@ import (
 
 	"uber/driver-service/internal/model"
 	"uber/shared/pkg/jwt"
-	"uber/driver-service/internal/otpclient"
+	"uber/shared/pkg/otp"
 )
 
 // ---------- mock ----------
@@ -177,7 +177,7 @@ func TestVerifyLogin_Success(t *testing.T) {
 func TestVerifyLogin_InvalidOTP(t *testing.T) {
 	mock := &mockDriverService{
 		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otpclient.ErrInvalidOTP
+			return nil, otp.ErrInvalidOTP
 		},
 	}
 	router := driverRouter(mock)
@@ -194,7 +194,7 @@ func TestVerifyLogin_InvalidOTP(t *testing.T) {
 func TestVerifyLogin_MaxAttempts(t *testing.T) {
 	mock := &mockDriverService{
 		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otpclient.ErrMaxAttempts
+			return nil, otp.ErrMaxAttemptsExceeded
 		},
 	}
 	router := driverRouter(mock)
