@@ -12,9 +12,20 @@ services:
     dockerfilePath: ./infra/nginx.Dockerfile
     dockerContext: ./infra
     plan: free
+    envVars:
+      - key: USER_SERVICE_URL
+        sync: false
+      - key: DRIVER_SERVICE_URL
+        sync: false
+      - key: TRIP_SERVICE_URL
+        sync: false
+      - key: NOTIFICATION_SERVICE_URL
+        sync: false
+      - key: PAYMENT_SERVICE_URL
+        sync: false
 
   # ── User Service ───────────────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: user-service
     runtime: docker
     dockerfilePath: ./services/user-service/Dockerfile
@@ -45,7 +56,7 @@ services:
         sync: false
 
   # ── Driver Service ─────────────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: driver-service
     runtime: docker
     dockerfilePath: ./services/driver-service/Dockerfile
@@ -68,7 +79,7 @@ services:
         sync: false
 
   # ── Trip Service ───────────────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: trip-service
     runtime: docker
     dockerfilePath: ./services/trip-service/Dockerfile
@@ -114,7 +125,7 @@ services:
         sync: false
 
   # ── Notification Service ───────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: notification-service
     runtime: docker
     dockerfilePath: ./services/notification-service/Dockerfile
@@ -143,7 +154,7 @@ services:
         sync: false
 
   # ── Payment Service ────────────────────────────────────────────────────────
-  - type: pserv
+  - type: web
     name: payment-service
     runtime: docker
     dockerfilePath: ./services/payment-service/Dockerfile
