@@ -11,7 +11,6 @@ type Config struct {
 	DatabaseURL   string
 	RedisAddr     string
 	KafkaBrokers  []string
-	OTPServiceURL string
 	EmailHost     string
 	EmailPort     int
 	EmailUser     string
@@ -25,7 +24,6 @@ func Load() Config {
 		DatabaseURL:   env.Get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/drivers_db?sslmode=disable"),
 		RedisAddr:     env.Get("REDIS_ADDR", "localhost:6379"),
 		KafkaBrokers:  strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
-		OTPServiceURL: env.Get("OTP_SERVICE_URL", "http://localhost:8086"),
 		EmailHost:     env.Get("EMAIL_HOST", "smtp.gmail.com"),
 		EmailPort:     env.GetInt("EMAIL_PORT", 587),
 		EmailUser:     env.Get("EMAIL_USER", ""),
