@@ -1,11 +1,11 @@
 go 1.21
 
 use (
-	./driver-service
-	./matching-service
-	./notification-service
-	./payment-service
+	./services/driver-service
+	./services/matching-service
+	./services/notification-service
+	./services/payment-service
+	./services/trip-service
+	./services/user-service
 	./shared
-	./trip-service
-	./user-service
 )
