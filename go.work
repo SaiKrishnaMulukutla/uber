@@ -4,7 +4,6 @@ use (
 	./services/driver-service
 	./services/matching-service
 	./services/notification-service
-	./services/otp-service
 	./services/payment-service
 	./services/trip-service
 	./services/user-service

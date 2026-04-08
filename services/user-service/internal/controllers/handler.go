@@ -10,7 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"uber/shared/pkg/jwt"
-	"uber/user-service/internal/otpclient"
+	"uber/shared/pkg/otp"
 	"uber/shared/pkg/validation"
 	"uber/user-service/internal/model"
 )
@@ -92,7 +92,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Login(r.Context(), req); err != nil {
-		if errors.Is(err, otpclient.ErrRateLimited) {
+		if errors.Is(err, otp.ErrRateLimitExceeded) {
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 			return
 		}
@@ -119,7 +119,7 @@ func (h *Handler) VerifyLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.svc.VerifyLogin(r.Context(), req)
 	if err != nil {
-		if errors.Is(err, otpclient.ErrMaxAttempts) {
+		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
 			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 			return
 		}
