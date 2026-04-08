@@ -57,13 +57,6 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     -trimpath -ldflags="-s -w" \
     -o /out ./services/payment-service/cmd
 
-FROM base AS build-otp
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath -ldflags="-s -w" \
-    -o /out ./services/otp-service/cmd
-
 # ── final lean runtime images ─────────────────────────────────
 FROM runtime-base AS user-service
 WORKDIR /app
@@ -104,11 +97,4 @@ WORKDIR /app
 COPY --from=build-payment /out .
 USER app
 EXPOSE 8085
-CMD ["./out"]
-
-FROM runtime-base AS otp-service
-WORKDIR /app
-COPY --from=build-otp /out .
-USER app
-EXPOSE 8086
 CMD ["./out"]
