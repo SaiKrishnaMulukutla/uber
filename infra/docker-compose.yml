@@ -58,9 +58,9 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/users_db?sslmode=disable
+      REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
-      OTP_SERVICE_URL: http://otp-service:8086
       PORT: "8081"
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
@@ -71,6 +71,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
       kafka:
         condition: service_started
     healthcheck:
@@ -91,7 +93,6 @@ services:
       REDIS_ADDR: redis:6379
       KAFKA_BROKERS: kafka:9092
       JWT_SECRET: ${JWT_SECRET}
-      OTP_SERVICE_URL: http://otp-service:8086
       PORT: "8082"
       EMAIL_HOST: ${EMAIL_HOST}
       EMAIL_PORT: ${EMAIL_PORT}
@@ -160,11 +161,6 @@ services:
         condition: service_started
       kafka:
         condition: service_started
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8087/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   notification-service:
     build:
@@ -224,31 +220,6 @@ services:
       timeout: 5s
       retries: 5
 
-  otp-service:
-    build:
-      context: ../
-      dockerfile: Dockerfile
-      target: otp-service
-    container_name: otp-service
-    restart: unless-stopped
-    environment:
-      REDIS_ADDR: redis:6379
-      PORT: "8086"
-      EMAIL_HOST: ${EMAIL_HOST}
-      EMAIL_PORT: ${EMAIL_PORT}
-      EMAIL_USER: ${EMAIL_USER}
-      EMAIL_PASS: ${EMAIL_PASS}
-    ports:
-      - "8086:8086"
-    depends_on:
-      redis:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8086/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api-gateway:
     build:
       context: .
@@ -263,7 +234,6 @@ services:
       - trip-service
       - notification-service
       - payment-service
-      - otp-service
 
 volumes:
   postgres_data:
