@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices system.\n\n**Setup:**\n1. Import this collection into Postman\n2. Base URL is pre-set to `http://localhost:8000`\n3. Run requests in order \u2014 tokens and IDs are auto-captured via test scripts\n\n**Architecture:** 6 microservices + API Gateway (NGINX :8000)\n**Flow:** Register \u2192 Login \u2192 Driver Go Online \u2192 Set Location \u2192 Request Trip \u2192 (3s wait) \u2192 Verify Assignment \u2192 Start Trip \u2192 End Trip \u2192 Rate \u2192 View Payment/Notifications",
+    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order — tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister → Login (OTP) → Driver Online → Set Location → Request Trip → *(~3s Kafka matching)* → Start Trip → Push Locations → End Trip → Rate → View Payment → View Notifications\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -9,6 +9,17 @@
       "key": "base_url",
       "value": "http://localhost:8000",
       "type": "string"
+    },
+    {
+      "key": "prod_base_url",
+      "value": "https://api-gateway-6sxe.onrender.com",
+      "type": "string"
+    },
+    {
+      "key": "internal_secret",
+      "value": "",
+      "type": "string",
+      "description": "Value of INTERNAL_SECRET env var (used for service-to-service endpoints)"
     },
     {
       "key": "rider_token",
@@ -42,6 +53,11 @@
     },
     {
       "key": "trip_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_id",
       "value": "",
       "type": "string"
     },
@@ -1241,13 +1257,14 @@
           ]
         },
         {
-          "name": "Assign Driver (Manual Override)",
+          "name": "Assign Driver (Internal Override)",
           "request": {
             "method": "PATCH",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{rider_token}}"
+                "key": "X-Internal-Secret",
+                "value": "{{internal_secret}}",
+                "description": "Must match INTERNAL_SECRET env var. This endpoint is called by matching-service, not by clients."
               },
               {
                 "key": "Content-Type",
@@ -1269,7 +1286,7 @@
                 "assign"
               ]
             },
-            "description": "Manually assign a driver to a REQUESTED trip (bypasses automatic Kafka matching)."
+            "description": "Manually assign a driver to a REQUESTED trip. In production this is called exclusively by matching-service via the `X-Internal-Secret` header — not by end-user clients.\n\nSet the `internal_secret` collection variable to the value of your `INTERNAL_SECRET` env var before running."
           },
           "response": [
             {
@@ -1277,6 +1294,12 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{ \"error\": \"unauthorized\" }"
             }
           ]
         },
@@ -1337,12 +1360,12 @@
               },
               {
                 "key": "Authorization",
-                "value": "Bearer {{driverToken}}"
+                "value": "Bearer {{driver_token}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"lat\": 17.385,\n  \"lng\": 78.4867\n}",
+              "raw": "{\n  \"lat\": 12.9720,\n  \"lng\": 77.5950\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1350,17 +1373,37 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/trips/{{tripId}}/location",
+              "raw": "{{base_url}}/trips/{{trip_id}}/location",
               "host": [
-                "{{baseUrl}}"
+                "{{base_url}}"
               ],
               "path": [
                 "trips",
-                "{{tripId}}",
+                "{{trip_id}}",
                 "location"
               ]
+            },
+            "description": "Push a live GPS coordinate for the driver during an active trip. The WebSocket hub broadcasts this to the rider in real-time.\n\nCall repeatedly while the trip is STARTED to simulate movement."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"status\": \"location_updated\" }"
             }
-          }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         },
         {
           "name": "End Trip",
@@ -1610,11 +1653,198 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.id) {",
+                  "  pm.collectionVariables.set('payment_id', body.id);",
+                  "  console.log('payment_id:', body.id);",
+                  "}",
                   "pm.test('Payment fields correct', () => {",
-                  "  const body = pm.response.json();",
                   "  pm.expect(body).to.include.all.keys('id','trip_id','rider_id','driver_id','amount','status','payment_method');",
-                  "  pm.expect(body.payment_method).to.eql('cash');",
                   "  pm.expect(body.amount).to.be.a('number').and.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Razorpay Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payments/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "orders"
+              ]
+            },
+            "description": "Create a Razorpay order for a PENDING payment. Returns `provider_order_id`, `amount`, `currency`, and `key_id` needed to open the Razorpay Checkout modal.\n\nPayment status moves to PROCESSING.\n\n**Prerequisites:**\n- `PAYMENT_PROVIDER=razorpay` in `.env`\n- Trip must be COMPLETED and payment in PENDING state\n- `payment_id` variable must be set (auto-captured by Get Payment by Trip)"
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"provider_order_id\": \"order_Abc123XYZ\",\n  \"amount\": 112.22,\n  \"currency\": \"INR\",\n  \"key_id\": \"rzp_test_...\"\n}"
+            },
+            {
+              "name": "400 Wrong State",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"payment is not in PENDING state\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Razorpay order fields present', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body).to.include.all.keys('provider_order_id','amount','currency','key_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Razorpay Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\",\n  \"provider_order_id\": \"order_Abc123XYZ\",\n  \"provider_payment_id\": \"pay_Xyz789ABC\",\n  \"signature\": \"<razorpay_signature_from_checkout_handler>\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payments/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "verify"
+              ]
+            },
+            "description": "Verify the Razorpay payment signature returned by the Checkout modal. The server validates `HMAC-SHA256(provider_order_id + '|' + provider_payment_id)` against `RAZORPAY_KEY_SECRET`.\n\nOn success, payment moves to COMPLETED and `payment.completed` is published to Kafka (triggers email notification)."
+          },
+          "response": [
+            {
+              "name": "200 OK — Payment Completed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"razorpay\",\n  \"completed_at\": \"2026-03-08T10:25:10Z\"\n}"
+            },
+            {
+              "name": "400 Invalid Signature",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"invalid payment signature\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status COMPLETED', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulate Payment Success (dev)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{rider_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_id\": \"{{payment_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/payments/simulate-success",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "simulate-success"
+              ]
+            },
+            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka → triggers in-app notification and email to rider."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-03-08T10:25:05Z\"\n}"
+            },
+            {
+              "name": "400 Already Completed",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"payment already completed\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Payment completed', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
                   "});"
                 ],
                 "type": "text/javascript"
