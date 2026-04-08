@@ -7,13 +7,15 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:8000",
-      "type": "string"
+      "value": "https://api-gateway-6sxe.onrender.com",
+      "type": "string",
+      "description": "Active base URL used by all requests. Swap with local_base_url for local development."
     },
     {
-      "key": "prod_base_url",
-      "value": "https://api-gateway-6sxe.onrender.com",
-      "type": "string"
+      "key": "local_base_url",
+      "value": "http://localhost:8000",
+      "type": "string",
+      "description": "Local development URL. Copy this value into base_url to run against the prod stack."
     },
     {
       "key": "internal_secret",
