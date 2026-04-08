@@ -25,25 +25,38 @@ func New(host string, port int, user, pass string) Mailer {
 	return &GmailMailer{host: host, port: port, user: user, pass: pass}
 }
 
-// Send delivers an HTML email to the recipient using STARTTLS.
+// Send delivers an HTML email to the recipient.
+// Port 465 uses direct TLS (SMTPS); any other port uses STARTTLS.
 func (m *GmailMailer) Send(to, subject, body string) error {
 	addr := net.JoinHostPort(m.host, fmt.Sprintf("%d", m.port))
+	tlsCfg := &tls.Config{ServerName: m.host}
 
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("mailer: dial failed: %w", err)
-	}
-
-	client, err := smtp.NewClient(conn, m.host)
-	if err != nil {
-		return fmt.Errorf("mailer: smtp client failed: %w", err)
+	var client *smtp.Client
+	if m.port == 465 {
+		conn, err := tls.Dial("tcp", addr, tlsCfg)
+		if err != nil {
+			return fmt.Errorf("mailer: tls dial failed: %w", err)
+		}
+		c, err := smtp.NewClient(conn, m.host)
+		if err != nil {
+			return fmt.Errorf("mailer: smtp client failed: %w", err)
+		}
+		client = c
+	} else {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("mailer: dial failed: %w", err)
+		}
+		c, err := smtp.NewClient(conn, m.host)
+		if err != nil {
+			return fmt.Errorf("mailer: smtp client failed: %w", err)
+		}
+		if err := c.StartTLS(tlsCfg); err != nil {
+			return fmt.Errorf("mailer: starttls failed: %w", err)
+		}
+		client = c
 	}
 	defer client.Close()
-
-	tlsCfg := &tls.Config{ServerName: m.host}
-	if err := client.StartTLS(tlsCfg); err != nil {
-		return fmt.Errorf("mailer: starttls failed: %w", err)
-	}
 
 	auth := smtp.PlainAuth("", m.user, m.pass, m.host)
 	if err := client.Auth(auth); err != nil {
