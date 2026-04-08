@@ -11,7 +11,6 @@ type Config struct {
 	DatabaseURL  string
 	KafkaBrokers []string
 	Port         string
-	ResendAPIKey string
 	EmailHost    string
 	EmailPort    int
 	EmailUser    string
@@ -24,7 +23,6 @@ func Load() Config {
 		DatabaseURL:  env.Get("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/notifications_db?sslmode=disable"),
 		KafkaBrokers: strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
 		Port:         env.Get("PORT", "8084"),
-		ResendAPIKey: env.Get("RESEND_API_KEY", ""),
 		EmailHost:    env.Get("EMAIL_HOST", "smtp.gmail.com"),
 		EmailPort:    env.GetInt("EMAIL_PORT", 587),
 		EmailUser:    env.Get("EMAIL_USER", ""),
