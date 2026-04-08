@@ -7,15 +7,16 @@ import (
 )
 
 type Config struct {
-	JWTSecret    string
-	DatabaseURL  string
-	RedisAddr    string
-	KafkaBrokers []string
-	Port         string
-	EmailHost    string
-	EmailPort    int
-	EmailUser    string
-	EmailPass    string
+	JWTSecret     string
+	DatabaseURL   string
+	RedisAddr     string
+	KafkaBrokers  []string
+	Port          string
+	ResendAPIKey  string
+	EmailHost     string
+	EmailPort     int
+	EmailUser     string
+	EmailPass     string
 }
 
 func Load() Config {
@@ -25,6 +26,7 @@ func Load() Config {
 		RedisAddr:    env.Get("REDIS_ADDR", "localhost:6379"),
 		KafkaBrokers: strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
 		Port:         env.Get("PORT", "8081"),
+		ResendAPIKey: env.Get("RESEND_API_KEY", ""),
 		EmailHost:    env.Get("EMAIL_HOST", "smtp.gmail.com"),
 		EmailPort:    env.GetInt("EMAIL_PORT", 587),
 		EmailUser:    env.Get("EMAIL_USER", ""),
