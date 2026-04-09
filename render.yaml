@@ -77,6 +77,8 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: BREVO_API_KEY
+        sync: false
 
   # ── Trip Service ───────────────────────────────────────────────────────────
   - type: web
@@ -180,5 +182,7 @@ services:
       - key: RAZORPAY_KEY_SECRET
         sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: BASE_URL
         sync: false
 

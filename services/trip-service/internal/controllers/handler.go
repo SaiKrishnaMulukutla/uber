@@ -267,7 +267,7 @@ func (h *Handler) PushLocation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.hub.BroadcastLocation(tripID, req.Lat, req.Lng)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "location updated"})
 }
 
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {

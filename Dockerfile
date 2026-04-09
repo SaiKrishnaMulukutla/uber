@@ -10,8 +10,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download all
 
 # ── shared runtime base: one layer reused by all services ─────
-FROM alpine:3.19 AS runtime-base
-RUN apk add --no-cache ca-certificates tzdata && \
+FROM alpine:3.21 AS runtime-base
+RUN apk update && apk add --no-cache ca-certificates tzdata && \
+    update-ca-certificates && \
     addgroup -S app && adduser -S app -G app
 
 # ── per-service build stages ──────────────────────────────────
