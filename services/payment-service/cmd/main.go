@@ -16,6 +16,8 @@ import (
 
 	"uber/payment-service/config"
 	"uber/payment-service/internal/controllers"
+	"uber/payment-service/internal/hub"
+	"uber/payment-service/internal/provider"
 	cashprov "uber/payment-service/internal/provider/cash"
 	rzpprov "uber/payment-service/internal/provider/razorpay"
 	"uber/payment-service/internal/repositories"
@@ -24,7 +26,6 @@ import (
 	"uber/shared/pkg/db"
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/kafka"
-	"uber/payment-service/internal/provider"
 )
 
 func main() {
@@ -50,15 +51,17 @@ func main() {
 	var prov provider.PaymentProvider
 	switch cfg.PaymentProvider {
 	case "razorpay":
-		prov = rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret)
+		prov = rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.TLSSkipVerify)
 		log.Println("[payments] using Razorpay payment provider")
 	default:
 		prov = cashprov.New()
 		log.Println("[payments] using cash payment provider")
 	}
 
+	paymentHub := hub.New()
+
 	repo := repositories.NewRepository(pool)
-	svc := service.NewService(repo, kafkaClient, prov, cfg.RazorpayKeyID)
+	svc := service.NewService(repo, kafkaClient, prov, cfg.RazorpayKeyID, paymentHub, cfg.BaseURL)
 
 	// Kafka consumer: trip.completed → create payment
 	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "payment-trip-completed", func(data []byte) error {
@@ -71,7 +74,7 @@ func main() {
 		return err
 	})
 
-	h := controllers.NewHandler(svc)
+	h := controllers.NewHandler(svc, paymentHub)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)

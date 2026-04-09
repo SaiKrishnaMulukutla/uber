@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"uber/payment-service/internal/hub"
 	"uber/payment-service/internal/model"
 	"uber/shared/pkg/jwt"
 )
@@ -24,24 +25,36 @@ type PaymentServicer interface {
 	ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
 }
 
-type Handler struct{ svc PaymentServicer }
+type Handler struct {
+	svc PaymentServicer
+	hub *hub.PaymentHub
+}
 
-func NewHandler(svc PaymentServicer) *Handler { return &Handler{svc: svc} }
+func NewHandler(svc PaymentServicer, h *hub.PaymentHub) *Handler { return &Handler{svc: svc, hub: h} }
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Webhook has no JWT — verified by HMAC inside the handler
+	// Public — no auth needed
 	r.Post("/webhook", h.Webhook)
+	r.Get("/checkout/{id}", h.Checkout)
+	r.Get("/ws/{id}", h.CheckoutWS)
 
-	// All other routes require authentication
+	// Checkout actions — checkout token or access token accepted
+	r.Group(func(r chi.Router) {
+		r.Use(jwt.RequireCheckoutAuth)
+		r.Post("/checkout/{id}/cash", h.CheckoutCash)
+		r.Post("/checkout/{id}/upi", h.CheckoutUPI)
+		r.Post("/verify", h.VerifyPayment)
+	})
+
+	// Standard authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireAuth)
 		r.Use(jwt.RequireRole("rider", "driver"))
 		r.Get("/history", h.History)
 		r.Get("/{tripId}", h.GetByTripID)
 		r.Post("/orders", h.CreateOrder)
-		r.Post("/verify", h.VerifyPayment)
 		r.Post("/simulate-success", h.Simulate)
 	})
 

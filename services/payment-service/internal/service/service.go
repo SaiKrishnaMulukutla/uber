@@ -10,8 +10,14 @@ import (
 	"uber/payment-service/internal/model"
 	"uber/payment-service/internal/provider"
 	"uber/payment-service/internal/repositories"
+	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/kafka"
 )
+
+// HubBroadcaster is implemented by hub.PaymentHub.
+type HubBroadcaster interface {
+	Broadcast(paymentID string)
+}
 
 // PaymentService defines all payment operations.
 type PaymentService interface {
@@ -42,11 +48,13 @@ type paymentService struct {
 	kafka    *kafka.Client
 	provider provider.PaymentProvider
 	keyID    string // Razorpay publishable key, returned in OrderResponse
+	hub      HubBroadcaster
+	baseURL  string
 }
 
 // NewService returns a PaymentService wired to the given dependencies.
-func NewService(repo repositories.PaymentRepository, k *kafka.Client, prov provider.PaymentProvider, keyID string) PaymentService {
-	return &paymentService{repo: repo, kafka: k, provider: prov, keyID: keyID}
+func NewService(repo repositories.PaymentRepository, k *kafka.Client, prov provider.PaymentProvider, keyID string, hub HubBroadcaster, baseURL string) PaymentService {
+	return &paymentService{repo: repo, kafka: k, provider: prov, keyID: keyID, hub: hub, baseURL: baseURL}
 }
 
 // InitPayment is the Kafka consumer entry point.
@@ -104,12 +112,21 @@ func (s *paymentService) CreateOrder(ctx context.Context, paymentID string) (*mo
 		return nil, fmt.Errorf("mark processing: %w", err)
 	}
 
+	// Generate a 30-min checkout token so the HTML page can call authenticated endpoints
+	checkoutToken, err := jwt.GenerateCheckoutToken(p.RiderID, p.RiderEmail, "rider")
+	if err != nil {
+		return nil, fmt.Errorf("generate checkout token: %w", err)
+	}
+
+	checkoutURL := fmt.Sprintf("%s/payments/checkout/%s?token=%s", s.baseURL, p.ID, checkoutToken)
+
 	return &model.OrderResponse{
 		PaymentID:       p.ID,
 		ProviderOrderID: order.ProviderOrderID,
 		Amount:          p.Amount,
 		Currency:        "INR",
 		KeyID:           s.keyID,
+		CheckoutURL:     checkoutURL,
 	}, nil
 }
 
@@ -220,6 +237,9 @@ func (s *paymentService) ListByUser(ctx context.Context, userID string, limit, o
 }
 
 func (s *paymentService) publishCompleted(ctx context.Context, p *model.Payment) {
+	if s.hub != nil {
+		s.hub.Broadcast(p.ID)
+	}
 	ev := kafka.PaymentCompletedEvent{
 		PaymentID:   p.ID,
 		TripID:      p.TripID,

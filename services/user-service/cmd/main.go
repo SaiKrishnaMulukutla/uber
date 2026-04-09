@@ -54,6 +54,8 @@ func main() {
 	var m mailer.Mailer
 	if cfg.BrevoAPIKey != "" && cfg.EmailUser != "" {
 		m = mailer.NewAsync(mailer.NewBrevo(cfg.BrevoAPIKey, cfg.EmailUser), 5)
+	} else if cfg.EmailUser != "" && cfg.EmailPass != "" {
+		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)

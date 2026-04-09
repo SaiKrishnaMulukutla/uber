@@ -46,6 +46,11 @@ func Generate(userID, email, role string) (string, error) {
 	return generateToken(userID, email, role, "access", 15*time.Minute)
 }
 
+// GenerateCheckoutToken creates a 30-minute token for the payment checkout page.
+func GenerateCheckoutToken(userID, email, role string) (string, error) {
+	return generateToken(userID, email, role, "checkout", 30*time.Minute)
+}
+
 // GenerateTokenPair returns a short-lived access token and a long-lived refresh token.
 func GenerateTokenPair(userID, email, role string) (*TokenPair, error) {
 	access, err := generateToken(userID, email, role, "access", 15*time.Minute)
@@ -107,11 +112,18 @@ func ValidateRefreshToken(raw string) (*Claims, error) {
 // ---- HTTP Middleware ----
 
 // OptionalAuth extracts JWT claims into context if a Bearer token is present.
+// Also accepts ?token= query param (used by checkout pages).
 // Requests without a token pass through (claims will be nil).
 func OptionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw := ""
 		if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-			if claims, err := Validate(auth[7:]); err == nil {
+			raw = auth[7:]
+		} else if t := r.URL.Query().Get("token"); t != "" {
+			raw = t
+		}
+		if raw != "" {
+			if claims, err := Validate(raw); err == nil {
 				r = r.WithContext(context.WithValue(r.Context(), claimsCtxKey, claims))
 			}
 		}
@@ -121,6 +133,18 @@ func OptionalAuth(next http.Handler) http.Handler {
 
 // RequireAuth rejects requests that have no valid JWT in context or that use a refresh token.
 func RequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		claims := GetClaims(r.Context())
+		if claims == nil || claims.TokenType == "refresh" {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RequireCheckoutAuth allows access tokens and checkout tokens (but not refresh tokens).
+func RequireCheckoutAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := GetClaims(r.Context())
 		if claims == nil || claims.TokenType == "refresh" {

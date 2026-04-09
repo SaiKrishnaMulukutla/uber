@@ -2,10 +2,23 @@ package mailer
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 )
+
+func newHTTPClient() *http.Client {
+	if os.Getenv("TLS_SKIP_VERIFY") == "true" {
+		return &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local dev only
+			},
+		}
+	}
+	return http.DefaultClient
+}
 
 type brevoMailer struct {
 	apiKey      string
@@ -39,7 +52,7 @@ func (b *brevoMailer) Send(to, subject, body string) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newHTTPClient().Do(req)
 	if err != nil {
 		return fmt.Errorf("brevo: request failed: %w", err)
 	}

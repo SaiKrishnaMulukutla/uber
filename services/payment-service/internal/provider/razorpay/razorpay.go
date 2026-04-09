@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"time"
 
 	rzp "github.com/razorpay/razorpay-go"
 
@@ -22,9 +25,19 @@ type Provider struct {
 }
 
 // New returns a Razorpay-backed PaymentProvider.
-func New(keyID, keySecret, webhookSecret string) *Provider {
+// skipTLS disables certificate verification — set true only for local dev behind a TLS-inspection proxy.
+func New(keyID, keySecret, webhookSecret string, skipTLS bool) *Provider {
+	c := rzp.NewClient(keyID, keySecret)
+	if skipTLS {
+		c.Request.HTTPClient = &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local dev only
+			},
+		}
+	}
 	return &Provider{
-		client:        rzp.NewClient(keyID, keySecret),
+		client:        c,
 		keySecret:     keySecret,
 		webhookSecret: webhookSecret,
 	}
@@ -32,7 +45,7 @@ func New(keyID, keySecret, webhookSecret string) *Provider {
 
 // CreateOrder creates a Razorpay order. Amount is in INR; converted to paise internally.
 func (p *Provider) CreateOrder(_ context.Context, amount float64, currency, receipt string) (*provider.Order, error) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"amount":   int(amount * 100), // paise
 		"currency": currency,
 		"receipt":  receipt,
