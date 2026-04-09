@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"uber/matching-service/config"
 	"uber/matching-service/internal/service"
@@ -20,35 +22,16 @@ func main() {
 
 	cfg := config.Load()
 
-	redisClient, err := rredis.NewClient(cfg.RedisAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer redisClient.Close()
+	// ready is set to 1 once Redis + Kafka are connected.
+	var ready atomic.Int32
 
-	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
-	if err := kafkaClient.EnsureTopics(ctx,
-		kafka.TopicRideRequested,
-		kafka.TopicDriverAssigned,
-		kafka.TopicTripCompleted,
-		kafka.TopicTripCancelled,
-	); err != nil {
-		log.Fatal(err)
-	}
-
-	matcher := service.NewMatcher(kafkaClient, redisClient)
-
-	log.Println("matching-service started, waiting for ride.requested events...")
-	kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "matching-group", func(data []byte) error {
-		return matcher.HandleRideRequested(ctx, data)
-	})
-
+	// Health endpoint starts immediately so Render's health check passes.
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if err := redisClient.Ping(r.Context()); err != nil {
+		if ready.Load() == 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"unhealthy","service":"matching-service"}`))
+			w.Write([]byte(`{"status":"starting","service":"matching-service"}`))
 			return
 		}
 		w.Write([]byte(`{"status":"ok","service":"matching-service"}`))
@@ -58,6 +41,42 @@ func main() {
 		if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
 			log.Printf("health server error: %v", err)
 		}
+	}()
+
+	// Connect to Redis + Kafka in background so the HTTP server is up instantly.
+	go func() {
+		var redisClient *rredis.Client
+		for {
+			rc, err := rredis.NewClient(cfg.RedisAddr)
+			if err == nil {
+				redisClient = rc
+				break
+			}
+			log.Printf("Redis unavailable, retrying in 10s: %v", err)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Second):
+			}
+		}
+		defer redisClient.Close()
+
+		kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
+		if err := kafkaClient.EnsureTopics(ctx,
+			kafka.TopicRideRequested,
+			kafka.TopicDriverAssigned,
+			kafka.TopicTripCompleted,
+			kafka.TopicTripCancelled,
+		); err != nil {
+			log.Fatalf("kafka topics: %v", err)
+		}
+
+		matcher := service.NewMatcher(kafkaClient, redisClient)
+		ready.Store(1)
+		log.Println("matching-service ready, consuming ride.requested events...")
+		kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "matching-group", func(data []byte) error {
+			return matcher.HandleRideRequested(ctx, data)
+		})
 	}()
 
 	quit := make(chan os.Signal, 1)
