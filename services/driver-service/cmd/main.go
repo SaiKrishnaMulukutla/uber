@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"uber/driver-service/config"
@@ -58,8 +59,8 @@ func main() {
 	repo := repositories.NewRepository(pool)
 
 	var m mailer.Mailer
-	if cfg.EmailUser != "" && cfg.EmailPass != "" {
-		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
+	if cfg.BrevoAPIKey != "" && cfg.EmailUser != "" {
+		m = mailer.NewAsync(mailer.NewBrevo(cfg.BrevoAPIKey, cfg.EmailUser), 5)
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)
@@ -117,6 +118,12 @@ func main() {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept"},
+		AllowCredentials: false,
+	}))
 	r.Use(jwt.OptionalAuth)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
