@@ -35,6 +35,9 @@ type PaymentService interface {
 	// HandleWebhook processes an inbound provider webhook as a backup confirmation path.
 	HandleWebhook(ctx context.Context, body []byte, signature string) error
 
+	// ConfirmCash is called by the driver to confirm cash was collected.
+	ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error)
+
 	// SimulateSuccess completes a payment without provider interaction (dev/testing only).
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
 
@@ -77,17 +80,14 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 		return s.repo.FindByTripID(ctx, tripID)
 	}
 
-	// Cash payments are completed immediately
+	// Cash payments wait for driver confirmation
 	if paymentMethod == "cash" {
-		now := time.Now()
-		if err := s.repo.MarkCompleted(ctx, p.ID, "", "", now); err != nil {
-			log.Printf("[payments] failed to complete cash payment %s: %v", p.ID, err)
+		if err := s.repo.MarkAwaitingCashConfirm(ctx, p.ID); err != nil {
+			log.Printf("[payments] failed to mark cash payment %s awaiting confirm: %v", p.ID, err)
 			return p, nil
 		}
-		p.Status = model.StatusCompleted
-		p.CompletedAt = &now
-		s.publishCompleted(ctx, p)
-		log.Printf("[payments] cash payment %s completed for trip %s", p.ID, tripID)
+		p.Status = model.StatusAwaitingCashConfirm
+		log.Printf("[payments] cash payment %s awaiting driver confirmation for trip %s", p.ID, tripID)
 	}
 
 	return p, nil
@@ -189,14 +189,37 @@ func (s *paymentService) HandleWebhook(ctx context.Context, body []byte, signatu
 	return nil
 }
 
-// SimulateSuccess completes any PENDING or PROCESSING payment without provider interaction.
+// ConfirmCash is called by the driver after collecting cash from the rider.
+func (s *paymentService) ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error) {
+	p, err := s.repo.FindByID(ctx, paymentID)
+	if err != nil {
+		return nil, fmt.Errorf("payment not found: %w", err)
+	}
+	if p.DriverID != driverID {
+		return nil, fmt.Errorf("not your payment")
+	}
+	if p.Status != model.StatusAwaitingCashConfirm {
+		return nil, fmt.Errorf("payment is in status %s; expected AWAITING_CASH_CONFIRM", p.Status)
+	}
+	now := time.Now()
+	if err := s.repo.MarkCompleted(ctx, p.ID, "cash", "", now); err != nil {
+		return nil, fmt.Errorf("confirm cash: mark completed: %w", err)
+	}
+	p.Status = model.StatusCompleted
+	p.CompletedAt = &now
+	s.publishCompleted(ctx, p)
+	log.Printf("[payments] cash payment %s confirmed by driver %s", p.ID, driverID)
+	return p, nil
+}
+
+// SimulateSuccess completes any PENDING, PROCESSING, or AWAITING_CASH_CONFIRM payment without provider interaction.
 func (s *paymentService) SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error) {
 	p, err := s.repo.FindByID(ctx, paymentID)
 	if err != nil {
 		return nil, fmt.Errorf("payment not found: %w", err)
 	}
-	if p.Status != model.StatusPending && p.Status != model.StatusProcessing {
-		return nil, fmt.Errorf("payment is in status %s; must be PENDING or PROCESSING to simulate", p.Status)
+	if p.Status != model.StatusPending && p.Status != model.StatusProcessing && p.Status != model.StatusAwaitingCashConfirm {
+		return nil, fmt.Errorf("payment is in status %s; must be PENDING, PROCESSING, or AWAITING_CASH_CONFIRM to simulate", p.Status)
 	}
 
 	now := time.Now()

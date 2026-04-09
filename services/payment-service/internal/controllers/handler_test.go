@@ -26,6 +26,7 @@ type mockPaymentService struct {
 	CreateOrderFn    func(ctx context.Context, paymentID string) (*model.OrderResponse, error)
 	VerifyPaymentFn  func(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
 	HandleWebhookFn  func(ctx context.Context, body []byte, signature string) error
+	ConfirmCashFn    func(ctx context.Context, paymentID, driverID string) (*model.Payment, error)
 	SimulateSuccFn   func(ctx context.Context, paymentID string) (*model.Payment, error)
 }
 
@@ -58,6 +59,12 @@ func (m *mockPaymentService) HandleWebhook(ctx context.Context, body []byte, sig
 		return m.HandleWebhookFn(ctx, body, signature)
 	}
 	return nil
+}
+func (m *mockPaymentService) ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error) {
+	if m.ConfirmCashFn != nil {
+		return m.ConfirmCashFn(ctx, paymentID, driverID)
+	}
+	return nil, nil
 }
 func (m *mockPaymentService) SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error) {
 	if m.SimulateSuccFn != nil {
