@@ -74,7 +74,7 @@ func TestMain(m *testing.M) {
 }
 
 func paymentRouter(mock *mockPaymentService) http.Handler {
-	h := NewHandler(mock)
+	h := NewHandler(mock, nil)
 	r := chi.NewRouter()
 	r.Use(jwt.OptionalAuth)
 	r.Mount("/payments", h.Routes())
