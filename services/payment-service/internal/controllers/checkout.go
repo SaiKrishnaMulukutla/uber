@@ -45,7 +45,7 @@ func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, renderCheckout(paymentID, token, payment.Amount, payment.TripID,
-		payment.ProviderOrderID, payment.ProviderPaymentID, qrBase64))
+		payment.ProviderOrderID, payment.ProviderPaymentID, payment.PaymentMethod, qrBase64))
 }
 
 // CheckoutCash handles cash payment confirmation.
@@ -70,7 +70,7 @@ func (h *Handler) CheckoutUPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": payment.Status, "amount": payment.Amount})
 }
 
-func renderCheckout(paymentID, token string, amount float64, tripID, providerOrderID, keyID, qrBase64 string) string {
+func renderCheckout(paymentID, token string, amount float64, tripID, providerOrderID, keyID, paymentMethod, qrBase64 string) string {
 	wsPath := "/payments/ws/" + paymentID
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -99,6 +99,11 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 .cash-amount{text-align:center;font-size:32px;font-weight:700;margin-bottom:6px}
 .cash-sub{text-align:center;font-size:13px;color:#888;margin-bottom:16px}
 .cash-note{font-size:13px;color:#555;line-height:1.6;text-align:center;background:#f9f9f9;border-radius:6px;padding:14px;margin-bottom:24px}
+.cash-waiting{text-align:center;padding:8px 0}
+.cash-steps{list-style:none;text-align:left;margin:0 0 20px;padding:0}
+.cash-steps li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;font-size:13px;color:#555;border-bottom:1px solid #f0f0f0}
+.cash-steps li:last-child{border:none}
+.step-num{background:#000;color:#fff;border-radius:50%%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
 
 /* UPI */
 .upi-app-row{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
@@ -169,7 +174,7 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
   </div>
 
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('cash')">&#128181; Cash</div>
+    <div class="tab" onclick="switchTab('cash')">&#128181; Cash</div>
     <div class="tab" onclick="switchTab('upi')">&#128242; UPI</div>
     <div class="tab" onclick="switchTab('card')">&#128179; Card</div>
   </div>
@@ -177,15 +182,20 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
   <div class="body">
 
     <!-- CASH -->
-    <div id="panel-cash" class="panel active">
+    <div id="panel-cash" class="panel">
       <div class="cash-icon">&#128181;</div>
       <div class="cash-amount">&#8377;%.2f</div>
       <div class="cash-sub">Pay your driver directly in cash</div>
-      <div class="cash-note">
-        Hand the exact amount to your driver at the end of the trip.
-        Your trip receipt will be generated automatically.
+      <div class="cash-waiting">
+        <ul class="cash-steps">
+          <li><span class="step-num">1</span>Hand <strong>&#8377;%.2f</strong> in cash to your driver</li>
+          <li><span class="step-num">2</span>Driver confirms receipt on their app</li>
+          <li><span class="step-num">3</span>This page updates automatically</li>
+        </ul>
+        <div class="pulse-ring"></div>
+        <div class="waiting-title">Waiting for driver confirmation</div>
+        <div class="waiting-sub" style="margin-top:6px">Page will update once driver confirms</div>
       </div>
-      <button class="btn" id="btn-cash" onclick="payCash()">Confirm Cash Payment</button>
     </div>
 
     <!-- UPI -->
@@ -262,6 +272,7 @@ const AMOUNT     = %.2f;
 const RZP_KEY    = %q;
 const RZP_ORDER  = %q;
 const WS_PATH    = %q;
+const METHOD     = %q;
 
 var upiTimer = null;
 
@@ -282,6 +293,9 @@ function switchTab(tab) {
   document.getElementById('panel-' + tab).classList.add('active');
   if (tab === 'upi') resetUPI();
 }
+
+// Open on the rider's chosen method; default to UPI
+switchTab((METHOD === 'cash' || METHOD === 'card') ? METHOD : 'upi');
 
 function showVPA() {
   document.getElementById('upi-qr-section').style.display = 'none';
@@ -340,20 +354,6 @@ async function confirmUPI() {
   }
 }
 
-async function payCash() {
-  var btn = document.getElementById('btn-cash');
-  btn.disabled = true; btn.textContent = 'Processing...';
-  try {
-    var r = await fetch('/payments/checkout/' + PAYMENT_ID + '/cash?token=' + TOKEN, {method:'POST'});
-    var d = await r.json();
-    if (d.error) throw new Error(d.error);
-    showSuccess('cash', d.amount);
-  } catch(e) {
-    btn.disabled = false; btn.textContent = 'Confirm Cash Payment';
-    alert('Error: ' + e.message);
-  }
-}
-
 function payCard() {
   var btn = document.getElementById('btn-card');
   btn.disabled = true;
@@ -407,11 +407,12 @@ function showSuccess(method, amount) {
 </html>`,
 		amount,   // header fare
 		amount,   // cash tab amount display
+		amount,   // cash steps "Hand ₹X" line
 		qrBase64, // QR code image
 		amount,   // QR amount label
 		amount,   // VPA pay button
 		amount,   // card pay button
-		paymentID, token, tripID, amount, keyID, providerOrderID, wsPath)
+		paymentID, token, tripID, amount, keyID, providerOrderID, wsPath, paymentMethod)
 }
 
 func renderSuccess(amount float64, method, tripID string) string {

@@ -3,10 +3,11 @@ package model
 import "time"
 
 const (
-	StatusPending    = "PENDING"
-	StatusProcessing = "PROCESSING"
-	StatusCompleted  = "COMPLETED"
-	StatusFailed     = "FAILED"
+	StatusPending             = "PENDING"
+	StatusProcessing          = "PROCESSING"
+	StatusAwaitingCashConfirm = "AWAITING_CASH_CONFIRM"
+	StatusCompleted           = "COMPLETED"
+	StatusFailed              = "FAILED"
 )
 
 type Payment struct {

@@ -13,6 +13,7 @@ import (
 type PaymentRepository interface {
 	Create(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
 	MarkProcessing(ctx context.Context, id, providerOrderID string) error
+	MarkAwaitingCashConfirm(ctx context.Context, id string) error
 	MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error
 	MarkFailed(ctx context.Context, id, reason string) error
 	FindByID(ctx context.Context, id string) (*model.Payment, error)
@@ -66,6 +67,13 @@ func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, rider
 	return p, nil
 }
 
+// MarkAwaitingCashConfirm transitions a cash payment to AWAITING_CASH_CONFIRM.
+func (r *pgPaymentRepository) MarkAwaitingCashConfirm(ctx context.Context, id string) error {
+	const q = `UPDATE payments SET status = 'AWAITING_CASH_CONFIRM', updated_at = NOW() WHERE id = $1 AND status = 'PENDING'`
+	_, err := r.db.Exec(ctx, q, id)
+	return err
+}
+
 // MarkProcessing transitions a payment to PROCESSING and stores the provider order ID.
 func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID string) error {
 	const q = `UPDATE payments
@@ -81,7 +89,7 @@ func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id, providerPay
 	const q = `UPDATE payments
 		SET status = 'COMPLETED', provider_payment_id = $2, provider_signature = $3,
 		    completed_at = $4, updated_at = NOW()
-		WHERE id = $1 AND status IN ('PENDING', 'PROCESSING')`
+		WHERE id = $1 AND status IN ('PENDING', 'PROCESSING', 'AWAITING_CASH_CONFIRM')`
 	_, err := r.db.Exec(ctx, q, id, providerPaymentID, providerSignature, completedAt)
 	return err
 }
