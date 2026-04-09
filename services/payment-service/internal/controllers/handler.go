@@ -19,6 +19,7 @@ type PaymentServicer interface {
 	CreateOrder(ctx context.Context, paymentID string) (*model.OrderResponse, error)
 	VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
 	HandleWebhook(ctx context.Context, body []byte, signature string) error
+	ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error)
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
 	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
@@ -56,6 +57,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/{tripId}", h.GetByTripID)
 		r.Post("/orders", h.CreateOrder)
 		r.Post("/simulate-success", h.Simulate)
+		r.Post("/{id}/confirm-cash", h.ConfirmCash)
 	})
 
 	return r
@@ -194,6 +196,22 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		offset = 10000
 	}
 	return
+}
+
+// ConfirmCash is called by the driver after collecting cash from the rider.
+func (h *Handler) ConfirmCash(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	if claims.Role != "driver" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can confirm cash payments"})
+		return
+	}
+	paymentID := chi.URLParam(r, "id")
+	p, err := h.svc.ConfirmCash(r.Context(), paymentID, claims.UserID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": p.Status, "amount": p.Amount})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
