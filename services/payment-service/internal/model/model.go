@@ -35,6 +35,7 @@ type OrderResponse struct {
 	Amount          float64 `json:"amount"`
 	Currency        string  `json:"currency"`
 	KeyID           string  `json:"key_id"`
+	CheckoutURL     string  `json:"checkout_url"`
 }
 
 // VerifyRequest is the frontend POST body for /payments/verify.

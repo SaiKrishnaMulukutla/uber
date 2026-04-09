@@ -13,6 +13,9 @@ type Config struct {
 	KafkaBrokers []string
 	Port         string
 	EmailUser    string
+	EmailPass    string
+	EmailHost    string
+	EmailPort    int
 	BrevoAPIKey  string
 }
 
@@ -24,6 +27,9 @@ func Load() Config {
 		KafkaBrokers: strings.Split(env.Get("KAFKA_BROKERS", "localhost:9092"), ","),
 		Port:         env.Get("PORT", "8081"),
 		EmailUser:    env.Get("EMAIL_USER", ""),
+		EmailPass:    env.Get("EMAIL_PASS", ""),
+		EmailHost:    env.Get("EMAIL_HOST", "smtp.gmail.com"),
+		EmailPort:    env.GetInt("EMAIL_PORT", 587),
 		BrevoAPIKey:  env.Get("BREVO_API_KEY", ""),
 	}
 }
