@@ -967,7 +967,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245,\n  \"payment_method\": \"cash\"\n}"
+              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245,\n  \"payment_method\": \"upi\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/request",
@@ -1477,7 +1477,73 @@
           ]
         },
         {
-          "name": "2. Simulate Payment Success (dev)",
+          "name": "2. Open Checkout Page (UPI / Cash / Card)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/payments/checkout/{{payment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "checkout", "{{payment_id}}"]
+            },
+            "description": "Opens the Uber-branded payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** → Cash tab (shows step instructions, waits for driver confirmation)\n- **upi** → UPI tab (shows scannable QR pointing to `themulukutla@ybl` + VPA input toggle)\n- **card** → Card tab (Razorpay checkout widget)\n\nFor cash/UPI trips the checkout URL is returned in `GET /payments/orders` as `checkout_url` (includes a short-lived token). You can also open this URL directly in a browser.\n\n**UPI flow:** Rider scans QR or enters VPA → clicks 'I've Paid' → 5s countdown → page calls `/payments/checkout/{id}/upi`.\n**Cash flow:** Rider sees 'Hand ₹X to driver' → driver calls `POST /payments/{id}/confirm-cash` → WebSocket pushes success to checkout page."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Confirm Cash Payment (Driver)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/payments/{{payment_id}}/confirm-cash",
+              "host": ["{{base_url}}"],
+              "path": ["payments", "{{payment_id}}", "confirm-cash"]
+            },
+            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM → COMPLETED`\n\nPublishes `payment.completed` to Kafka → triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
+          },
+          "response": [
+            {
+              "name": "200 OK — Cash Confirmed",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-04-10T08:00:00Z\"\n}"
+            },
+            {
+              "name": "403 Wrong Driver",
+              "status": "Forbidden",
+              "code": 403,
+              "body": "{ \"error\": \"not your payment\" }"
+            },
+            {
+              "name": "400 Wrong State",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"payment is in status COMPLETED; expected AWAITING_CASH_CONFIRM\" }"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Payment COMPLETED', () => {",
+                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4. Simulate Payment Success (dev)",
           "request": {
             "method": "POST",
             "header": [
@@ -1536,7 +1602,7 @@
           ]
         },
         {
-          "name": "3. Create Razorpay Order",
+          "name": "5. Create Razorpay Order",
           "request": {
             "method": "POST",
             "header": [
@@ -1602,7 +1668,7 @@
           ]
         },
         {
-          "name": "4. Verify Razorpay Payment",
+          "name": "6. Verify Razorpay Payment",
           "request": {
             "method": "POST",
             "header": [
@@ -1661,7 +1727,7 @@
           ]
         },
         {
-          "name": "5. Payment History",
+          "name": "7. Payment History",
           "request": {
             "method": "GET",
             "header": [
