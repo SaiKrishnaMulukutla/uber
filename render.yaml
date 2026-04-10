@@ -107,8 +107,8 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
 
-  # ── Matching Service (background worker) ───────────────────────────────────
-  - type: worker
+  # ── Matching Service ───────────────────────────────────────────────────────
+  - type: web
     name: matching-service
     runtime: docker
     dockerfilePath: ./services/matching-service/Dockerfile
