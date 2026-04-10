@@ -7,7 +7,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "https://api-gateway-6sxe.onrender.com",
+      "value": "https://api-gateway-ov0j.onrender.com",
       "type": "string",
       "description": "Active base URL used by all requests. Swap with local_base_url for local development."
     },
