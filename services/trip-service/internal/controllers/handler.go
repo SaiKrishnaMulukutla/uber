@@ -16,7 +16,7 @@ import (
 
 // TripServicer is the subset of service.TripService the handler needs.
 type TripServicer interface {
-	Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
+	Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
 	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
@@ -149,7 +149,7 @@ func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
 		return
 	}
-	trip, err := h.svc.Request(r.Context(), claims.UserID, claims.Email, req)
+	trip, err := h.svc.Request(r.Context(), claims.UserID, claims.Email, claims.Phone, req)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

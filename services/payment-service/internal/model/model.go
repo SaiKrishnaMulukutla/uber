@@ -15,6 +15,7 @@ type Payment struct {
 	TripID            string     `json:"trip_id"`
 	RiderID           string     `json:"rider_id"`
 	RiderEmail        string     `json:"rider_email,omitempty"`
+	RiderPhone        string     `json:"rider_phone,omitempty"`
 	DriverID          string     `json:"driver_id"`
 	Amount            float64    `json:"amount"`
 	Status            string     `json:"status"`
@@ -32,10 +33,10 @@ type Payment struct {
 // OrderResponse is returned to the frontend after CreateOrder.
 type OrderResponse struct {
 	PaymentID       string  `json:"payment_id"`
-	ProviderOrderID string  `json:"provider_order_id"`
+	ProviderOrderID *string `json:"provider_order_id"` // null for cash
 	Amount          float64 `json:"amount"`
 	Currency        string  `json:"currency"`
-	KeyID           string  `json:"key_id"`
+	KeyID           string  `json:"key_id,omitempty"`
 	CheckoutURL     string  `json:"checkout_url"`
 }
 

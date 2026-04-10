@@ -1,6 +1,7 @@
 package razorpay
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -20,26 +21,32 @@ import (
 // Provider implements provider.PaymentProvider using Razorpay.
 type Provider struct {
 	client        *rzp.Client
+	keyID         string
 	keySecret     string
 	webhookSecret string
+	httpClient    *http.Client
 }
 
 // New returns a Razorpay-backed PaymentProvider.
 // skipTLS disables certificate verification — set true only for local dev behind a TLS-inspection proxy.
 func New(keyID, keySecret, webhookSecret string, skipTLS bool) *Provider {
+	transport := http.DefaultTransport
+	if skipTLS {
+		transport = &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local dev only
+		}
+	}
+	httpClient := &http.Client{Timeout: 30 * time.Second, Transport: transport}
 	c := rzp.NewClient(keyID, keySecret)
 	if skipTLS {
-		c.Request.HTTPClient = &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local dev only
-			},
-		}
+		c.Request.HTTPClient = httpClient
 	}
 	return &Provider{
 		client:        c,
+		keyID:         keyID,
 		keySecret:     keySecret,
 		webhookSecret: webhookSecret,
+		httpClient:    httpClient,
 	}
 }
 
@@ -79,8 +86,9 @@ func (p *Provider) VerifyPayment(_ context.Context, orderID, paymentID, signatur
 }
 
 // ParseWebhook verifies and parses an inbound Razorpay webhook.
-// Returns nil, nil for events other than payment.captured.
+// Handles payment.captured (card / UPI). Returns nil, nil for other events.
 func (p *Provider) ParseWebhook(body []byte, sig string) (*provider.PaymentResult, error) {
+	// Verify HMAC
 	mac := hmac.New(sha256.New, []byte(p.webhookSecret))
 	mac.Write(body)
 	expected := hex.EncodeToString(mac.Sum(nil))
@@ -102,11 +110,23 @@ func (p *Provider) ParseWebhook(body []byte, sig string) (*provider.PaymentResul
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, fmt.Errorf("razorpay: parse webhook body: %w", err)
 	}
+
 	if payload.Event != "payment.captured" {
-		return nil, nil // ignore non-capture events
+		return nil, nil // ignore other events
 	}
 	return &provider.PaymentResult{
 		ProviderPaymentID: payload.Payload.Payment.Entity.ID,
 		ProviderOrderID:   payload.Payload.Payment.Entity.OrderID,
 	}, nil
+}
+
+// razorpayRequest makes a raw HTTP call to the Razorpay API with Basic auth.
+func (p *Provider) razorpayRequest(ctx context.Context, method, path string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, "https://api.razorpay.com"+path, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(p.keyID, p.keySecret)
+	req.Header.Set("Content-Type", "application/json")
+	return p.httpClient.Do(req)
 }

@@ -15,6 +15,7 @@ import (
 type Claims struct {
 	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
+	Phone     string `json:"phone,omitempty"`
 	Role      string `json:"role"`       // "rider" or "driver"
 	TokenType string `json:"token_type"` // "access" or "refresh"
 	gojwt.RegisteredClaims
@@ -43,31 +44,33 @@ func Init(s string) error {
 
 // Generate creates a signed access JWT (15 min) for the given user.
 func Generate(userID, email, role string) (string, error) {
-	return generateToken(userID, email, role, "access", 15*time.Minute)
+	return generateToken(userID, email, "", role, "access", 15*time.Minute)
 }
 
 // GenerateCheckoutToken creates a 30-minute token for the payment checkout page.
 func GenerateCheckoutToken(userID, email, role string) (string, error) {
-	return generateToken(userID, email, role, "checkout", 30*time.Minute)
+	return generateToken(userID, email, "", role, "checkout", 30*time.Minute)
 }
 
 // GenerateTokenPair returns a short-lived access token and a long-lived refresh token.
-func GenerateTokenPair(userID, email, role string) (*TokenPair, error) {
-	access, err := generateToken(userID, email, role, "access", 15*time.Minute)
+// Pass phone="" if not available (e.g. driver auth).
+func GenerateTokenPair(userID, email, phone, role string) (*TokenPair, error) {
+	access, err := generateToken(userID, email, phone, role, "access", 15*time.Minute)
 	if err != nil {
 		return nil, err
 	}
-	refresh, err := generateToken(userID, email, role, "refresh", 7*24*time.Hour)
+	refresh, err := generateToken(userID, email, phone, role, "refresh", 7*24*time.Hour)
 	if err != nil {
 		return nil, err
 	}
 	return &TokenPair{AccessToken: access, RefreshToken: refresh}, nil
 }
 
-func generateToken(userID, email, role, tokenType string, duration time.Duration) (string, error) {
+func generateToken(userID, email, phone, role, tokenType string, duration time.Duration) (string, error) {
 	claims := Claims{
 		UserID:    userID,
 		Email:     email,
+		Phone:     phone,
 		Role:      role,
 		TokenType: tokenType,
 		RegisteredClaims: gojwt.RegisteredClaims{

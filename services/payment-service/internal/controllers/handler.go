@@ -27,29 +27,27 @@ type PaymentServicer interface {
 }
 
 type Handler struct {
-	svc PaymentServicer
-	hub *hub.PaymentHub
+	svc   PaymentServicer
+	hub   *hub.PaymentHub
+	keyID string
 }
 
-func NewHandler(svc PaymentServicer, h *hub.PaymentHub) *Handler { return &Handler{svc: svc, hub: h} }
+func NewHandler(svc PaymentServicer, h *hub.PaymentHub, keyID string) *Handler {
+	return &Handler{svc: svc, hub: h, keyID: keyID}
+}
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// Public — no auth needed
 	r.Post("/webhook", h.Webhook)
 	r.Get("/checkout/{id}", h.Checkout)
 	r.Get("/ws/{id}", h.CheckoutWS)
 
-	// Checkout actions — checkout token or access token accepted
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireCheckoutAuth)
-		r.Post("/checkout/{id}/cash", h.CheckoutCash)
-		r.Post("/checkout/{id}/upi", h.CheckoutUPI)
 		r.Post("/verify", h.VerifyPayment)
 	})
 
-	// Standard authenticated routes
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireAuth)
 		r.Use(jwt.RequireRole("rider", "driver"))
@@ -89,8 +87,6 @@ func (h *Handler) GetByTripID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-// CreateOrder creates a provider order for a pending payment.
-// Body: {"payment_id": "<uuid>"}
 func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "rider" {
@@ -112,7 +108,6 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// VerifyPayment verifies the Razorpay signature and completes the payment.
 func (h *Handler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 	var req model.VerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -131,24 +126,19 @@ func (h *Handler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
-// Webhook processes an inbound Razorpay webhook.
-// No JWT — signature is verified via HMAC inside the service.
 func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusOK) // always 200 to Razorpay
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	sig := r.Header.Get("X-Razorpay-Signature")
 	if err := h.svc.HandleWebhook(r.Context(), body, sig); err != nil {
-		// Log but do not expose; always return 200 so Razorpay stops retrying
 		_ = err
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
-// Simulate completes a payment without provider interaction (dev/testing only).
-// Body: {"payment_id": "<uuid>"}
 func (h *Handler) Simulate(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	var body struct {
@@ -158,7 +148,6 @@ func (h *Handler) Simulate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_id is required"})
 		return
 	}
-	// Ownership check: fetch the payment and ensure the caller is the rider or driver.
 	existing, err := h.svc.GetByPaymentID(r.Context(), body.PaymentID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "payment not found"})
@@ -176,9 +165,23 @@ func (h *Handler) Simulate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, p)
 }
 
+func (h *Handler) ConfirmCash(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	if claims.Role != "driver" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can confirm cash payments"})
+		return
+	}
+	paymentID := chi.URLParam(r, "id")
+	p, err := h.svc.ConfirmCash(r.Context(), paymentID, claims.UserID)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": p.Status, "amount": p.Amount})
+}
+
 func parsePagination(r *http.Request) (limit, offset int) {
 	limit = 20
-	offset = 0
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if l, err := strconv.Atoi(v); err == nil && l > 0 {
 			limit = l
@@ -196,22 +199,6 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		offset = 10000
 	}
 	return
-}
-
-// ConfirmCash is called by the driver after collecting cash from the rider.
-func (h *Handler) ConfirmCash(w http.ResponseWriter, r *http.Request) {
-	claims := jwt.GetClaims(r.Context())
-	if claims.Role != "driver" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can confirm cash payments"})
-		return
-	}
-	paymentID := chi.URLParam(r, "id")
-	p, err := h.svc.ConfirmCash(r.Context(), paymentID, claims.UserID)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": p.Status, "amount": p.Amount})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

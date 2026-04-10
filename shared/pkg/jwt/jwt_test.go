@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 // ---------- TestGenerateTokenPair ----------
 
 func TestGenerateTokenPair(t *testing.T) {
-	pair, err := GenerateTokenPair("u1", "u1@example.com", "rider")
+	pair, err := GenerateTokenPair("u1", "u1@example.com", "", "rider")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair returned error: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestValidate_AccessToken(t *testing.T) {
 // ---------- TestValidateRefreshToken ----------
 
 func TestValidateRefreshToken(t *testing.T) {
-	pair, err := GenerateTokenPair("u3", "u3@example.com", "rider")
+	pair, err := GenerateTokenPair("u3", "u3@example.com", "", "rider")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestValidateRefreshToken(t *testing.T) {
 
 func TestValidate_Expired(t *testing.T) {
 	// Generate a token with a very short expiry using the internal helper.
-	tok, err := generateToken("u4", "u4@example.com", "rider", "access", 1*time.Millisecond)
+	tok, err := generateToken("u4", "u4@example.com", "", "rider", "access", 1*time.Millisecond)
 	if err != nil {
 		t.Fatalf("generateToken: %v", err)
 	}
@@ -169,7 +169,7 @@ func buildRequest(t *testing.T, token string) *http.Request {
 // ---------- TestRequireRole_Allowed ----------
 
 func TestRequireRole_Allowed(t *testing.T) {
-	pair, err := GenerateTokenPair("u5", "u5@example.com", "rider")
+	pair, err := GenerateTokenPair("u5", "u5@example.com", "", "rider")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRequireRole_Allowed(t *testing.T) {
 // ---------- TestRequireRole_Forbidden ----------
 
 func TestRequireRole_Forbidden(t *testing.T) {
-	pair, err := GenerateTokenPair("u6", "u6@example.com", "driver")
+	pair, err := GenerateTokenPair("u6", "u6@example.com", "", "driver")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestRequireRole_Forbidden(t *testing.T) {
 // ---------- TestRequireAuth_RejectsRefreshToken ----------
 
 func TestRequireAuth_RejectsRefreshToken(t *testing.T) {
-	pair, err := GenerateTokenPair("u7", "u7@example.com", "rider")
+	pair, err := GenerateTokenPair("u7", "u7@example.com", "", "rider")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestRequireAuth_RejectsRefreshToken(t *testing.T) {
 // ---------- Extra: verify RequireAuth passes valid access token ----------
 
 func TestRequireAuth_AcceptsAccessToken(t *testing.T) {
-	pair, err := GenerateTokenPair("u8", "u8@example.com", "rider")
+	pair, err := GenerateTokenPair("u8", "u8@example.com", "", "rider")
 	if err != nil {
 		t.Fatalf("GenerateTokenPair: %v", err)
 	}

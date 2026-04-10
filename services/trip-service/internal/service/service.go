@@ -18,7 +18,7 @@ import (
 
 // TripService defines trip business operations.
 type TripService interface {
-	Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
+	Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
 	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
@@ -42,7 +42,7 @@ func New(repo repositories.TripRepository, k *kafka.Client, r *rredis.Client) Tr
 	return &tripService{repo: repo, kafka: k, redis: r}
 }
 
-func (s *tripService) Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error) {
+func (s *tripService) Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error) {
 	// Reject zero-distance trips (pickup == drop within ~11 m).
 	if haversineKm(req.PickupLat, req.PickupLng, req.DropLat, req.DropLng) < 0.01 {
 		return nil, errors.New("pickup and drop-off locations are too close")
@@ -60,6 +60,7 @@ func (s *tripService) Request(ctx context.Context, riderID, riderEmail string, r
 		ID:            id,
 		RiderID:       riderID,
 		RiderEmail:    riderEmail,
+		RiderPhone:    riderPhone,
 		PickupLat:     req.PickupLat,
 		PickupLng:     req.PickupLng,
 		DropLat:       req.DropLat,
@@ -157,6 +158,7 @@ func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *
 		DriverID:        driverID,
 		RiderID:         trip.RiderID,
 		RiderEmail:      trip.RiderEmail,
+		RiderPhone:      trip.RiderPhone,
 		Fare:            fare,
 		PaymentMethod:   trip.PaymentMethod,
 		CompletedAt:     now.Format(time.RFC3339),
