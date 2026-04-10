@@ -37,19 +37,19 @@ func NewRepository(pool *pgxpool.Pool) TripRepository {
 
 func (r *pgTripRepository) CreateTrip(ctx context.Context, t *model.Trip) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO trips (id,rider_id,rider_email,pickup_lat,pickup_lng,drop_lat,drop_lng,status,payment_method,requested_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-		t.ID, t.RiderID, t.RiderEmail, t.PickupLat, t.PickupLng, t.DropLat, t.DropLng, t.Status, t.PaymentMethod, t.RequestedAt)
+		`INSERT INTO trips (id,rider_id,rider_email,rider_phone,pickup_lat,pickup_lng,drop_lat,drop_lng,status,payment_method,requested_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		t.ID, t.RiderID, t.RiderEmail, t.RiderPhone, t.PickupLat, t.PickupLng, t.DropLat, t.DropLng, t.Status, t.PaymentMethod, t.RequestedAt)
 	return err
 }
 
 func (r *pgTripRepository) FindByID(ctx context.Context, id string) (*model.Trip, error) {
 	var t model.Trip
 	err := r.pool.QueryRow(ctx,
-		`SELECT id,rider_id,rider_email,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
+		`SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
 		        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
 		 FROM trips WHERE id=$1`, id).
-		Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.DriverID,
+		Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
 			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt)
 	if err != nil {
@@ -117,7 +117,7 @@ func (r *pgTripRepository) ListByRider(ctx context.Context, riderID string, limi
 	if err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM trips WHERE rider_id=$1", riderID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
+	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
 	        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
 	 FROM trips WHERE rider_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, riderID, limit, offset)
 }
@@ -127,7 +127,7 @@ func (r *pgTripRepository) ListByDriver(ctx context.Context, driverID string, li
 	if err := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM trips WHERE driver_id=$1", driverID).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
+	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
 	        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
 	 FROM trips WHERE driver_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, driverID, limit, offset)
 }
@@ -141,7 +141,7 @@ func (r *pgTripRepository) queryTrips(ctx context.Context, total int, query stri
 	trips := []*model.Trip{}
 	for rows.Next() {
 		var t model.Trip
-		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.DriverID,
+		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
 			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
 			return nil, 0, err
@@ -157,7 +157,7 @@ func (r *pgTripRepository) queryTrips(ctx context.Context, total int, query stri
 func (r *pgTripRepository) FindStuckTrips(ctx context.Context, olderThan time.Duration) ([]*model.Trip, error) {
 	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.pool.Query(ctx,
-		`SELECT id,rider_id,rider_email,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
+		`SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
 		        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
 		 FROM trips WHERE status=$1 AND requested_at < $2`,
 		model.StatusRequested, cutoff)
@@ -168,7 +168,7 @@ func (r *pgTripRepository) FindStuckTrips(ctx context.Context, olderThan time.Du
 	var trips []*model.Trip
 	for rows.Next() {
 		var t model.Trip
-		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.DriverID,
+		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
 			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
 			return nil, err

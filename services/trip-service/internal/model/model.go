@@ -16,6 +16,7 @@ type Trip struct {
 	ID              string     `json:"id"`
 	RiderID         string     `json:"rider_id"`
 	RiderEmail      string     `json:"rider_email,omitempty"`
+	RiderPhone      string     `json:"rider_phone,omitempty"`
 	DriverID        *string    `json:"driver_id,omitempty"`
 	PickupLat       float64    `json:"pickup_lat"`
 	PickupLng       float64    `json:"pickup_lng"`

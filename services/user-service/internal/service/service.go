@@ -61,7 +61,7 @@ func (s *userService) Register(ctx context.Context, req model.RegisterRequest) (
 		return nil, err
 	}
 
-	pair, err := jwt.GenerateTokenPair(id, req.Email, "rider")
+	pair, err := jwt.GenerateTokenPair(id, req.Email, req.Phone, "rider")
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (s *userService) VerifyLogin(ctx context.Context, req model.VerifyLoginRequ
 	if err != nil {
 		return nil, errors.New("user not found")
 	}
-	pair, err := jwt.GenerateTokenPair(u.ID, u.Email, "rider")
+	pair, err := jwt.GenerateTokenPair(u.ID, u.Email, u.Phone, "rider")
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (s *userService) Refresh(ctx context.Context, refreshToken string) (*model.
 	if claims.Role != "rider" {
 		return nil, errors.New("invalid token role")
 	}
-	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, claims.Role)
+	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, claims.Phone, claims.Role)
 	if err != nil {
 		return nil, err
 	}

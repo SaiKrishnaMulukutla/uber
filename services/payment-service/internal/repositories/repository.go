@@ -11,14 +11,15 @@ import (
 
 // PaymentRepository defines all persistence operations for payments.
 type PaymentRepository interface {
-	Create(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
-	MarkProcessing(ctx context.Context, id, providerOrderID string) error
+	Create(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
+	MarkProcessing(ctx context.Context, id, providerOrderID, providerQRID, providerQRURL string) error
 	MarkAwaitingCashConfirm(ctx context.Context, id string) error
 	MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error
 	MarkFailed(ctx context.Context, id, reason string) error
 	FindByID(ctx context.Context, id string) (*model.Payment, error)
 	FindByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error)
+	FindByProviderQRID(ctx context.Context, qrID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Payment, int, error)
 }
 
@@ -31,8 +32,9 @@ func NewRepository(db *pgxpool.Pool) PaymentRepository {
 	return &pgPaymentRepository{db: db}
 }
 
-const selectCols = `id, trip_id, rider_id, rider_email, driver_id, amount, status, payment_method, provider,
+const selectCols = `id, trip_id, rider_id, rider_email, rider_phone, driver_id, amount, status, payment_method, provider,
 	COALESCE(provider_order_id, ''), COALESCE(provider_payment_id, ''), COALESCE(failure_reason, ''),
+	COALESCE(provider_qr_id, ''), COALESCE(provider_qr_url, ''),
 	attempts_count, created_at, completed_at, updated_at`
 
 type scanner interface {
@@ -42,9 +44,10 @@ type scanner interface {
 func scanPayment(row scanner) (*model.Payment, error) {
 	p := &model.Payment{}
 	err := row.Scan(
-		&p.ID, &p.TripID, &p.RiderID, &p.RiderEmail, &p.DriverID, &p.Amount, &p.Status,
+		&p.ID, &p.TripID, &p.RiderID, &p.RiderEmail, &p.RiderPhone, &p.DriverID, &p.Amount, &p.Status,
 		&p.PaymentMethod, &p.Provider,
 		&p.ProviderOrderID, &p.ProviderPaymentID, &p.FailureReason,
+		&p.ProviderQRID, &p.ProviderQRURL,
 		&p.AttemptsCount, &p.CreatedAt, &p.CompletedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -54,12 +57,12 @@ func scanPayment(row scanner) (*model.Payment, error) {
 }
 
 // Create inserts a new PENDING payment. Returns nil, nil on duplicate trip_id (idempotent).
-func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
-	const q = `INSERT INTO payments (trip_id, rider_id, rider_email, driver_id, amount, status, payment_method, provider)
-		VALUES ($1, $2, $3, $4, $5, 'PENDING', $6, $7)
+func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
+	const q = `INSERT INTO payments (trip_id, rider_id, rider_email, rider_phone, driver_id, amount, status, payment_method, provider)
+		VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8)
 		ON CONFLICT (trip_id) DO NOTHING
 		RETURNING ` + selectCols
-	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, riderEmail, driverID, amount, paymentMethod, providerName))
+	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, riderEmail, riderPhone, driverID, amount, paymentMethod, providerName))
 	if err != nil {
 		// pgx returns pgx.ErrNoRows when ON CONFLICT suppresses the INSERT
 		return nil, nil //nolint:nilerr
@@ -74,12 +77,15 @@ func (r *pgPaymentRepository) MarkAwaitingCashConfirm(ctx context.Context, id st
 	return err
 }
 
-// MarkProcessing transitions a payment to PROCESSING and stores the provider order ID.
-func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID string) error {
+// MarkProcessing transitions a payment to PROCESSING and stores the provider order/QR IDs.
+// Pass empty strings for providerQRID/providerQRURL when not applicable (card payments).
+func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID, providerQRID, providerQRURL string) error {
 	const q = `UPDATE payments
-		SET status = 'PROCESSING', provider_order_id = $2, attempts_count = attempts_count + 1, updated_at = NOW()
+		SET status = 'PROCESSING', provider_order_id = $2,
+		    provider_qr_id = NULLIF($3, ''), provider_qr_url = NULLIF($4, ''),
+		    attempts_count = attempts_count + 1, updated_at = NOW()
 		WHERE id = $1`
-	_, err := r.db.Exec(ctx, q, id, providerOrderID)
+	_, err := r.db.Exec(ctx, q, id, providerOrderID, providerQRID, providerQRURL)
 	return err
 }
 
@@ -120,6 +126,12 @@ func (r *pgPaymentRepository) FindByTripID(ctx context.Context, tripID string) (
 func (r *pgPaymentRepository) FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error) {
 	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_order_id = $1`
 	return scanPayment(r.db.QueryRow(ctx, q, providerOrderID))
+}
+
+// FindByProviderQRID retrieves a payment by its Razorpay QR code ID (for qr_code.credited webhook).
+func (r *pgPaymentRepository) FindByProviderQRID(ctx context.Context, qrID string) (*model.Payment, error) {
+	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_qr_id = $1`
+	return scanPayment(r.db.QueryRow(ctx, q, qrID))
 }
 
 // ListByUser returns paginated payments for a rider or driver.

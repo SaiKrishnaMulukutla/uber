@@ -22,14 +22,15 @@ type HubBroadcaster interface {
 // PaymentService defines all payment operations.
 type PaymentService interface {
 	// InitPayment is called by the Kafka consumer on trip.completed.
-	// Cash payments are immediately completed; card payments stay PENDING.
-	InitPayment(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod string, amount float64) (*model.Payment, error)
+	InitPayment(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod string, amount float64) (*model.Payment, error)
 
-	// CreateOrder creates a provider order and transitions the payment to PROCESSING.
-	// Returns an OrderResponse the frontend uses to launch the checkout widget.
+	// CreateOrder creates a provider order and returns checkout details.
+	// For cash: skips Razorpay, returns checkout_url with null provider_order_id.
+	// For UPI:  creates order + QR code, returns upi_qr_url.
+	// For card: creates order, returns provider_order_id + key_id.
 	CreateOrder(ctx context.Context, paymentID string) (*model.OrderResponse, error)
 
-	// VerifyPayment verifies the frontend signature and completes the payment.
+	// VerifyPayment verifies the frontend signature and completes a card payment.
 	VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
 
 	// HandleWebhook processes an inbound provider webhook as a backup confirmation path.
@@ -37,6 +38,9 @@ type PaymentService interface {
 
 	// ConfirmCash is called by the driver to confirm cash was collected.
 	ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error)
+
+	// InitiateUPICollect sends a UPI collect request to the rider's VPA.
+	InitiateUPICollect(ctx context.Context, paymentID, vpa string) error
 
 	// SimulateSuccess completes a payment without provider interaction (dev/testing only).
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
@@ -61,7 +65,7 @@ func NewService(repo repositories.PaymentRepository, k *kafka.Client, prov provi
 }
 
 // InitPayment is the Kafka consumer entry point.
-func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, riderEmail, driverID, paymentMethod string, amount float64) (*model.Payment, error) {
+func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod string, amount float64) (*model.Payment, error) {
 	if amount <= 0 {
 		return nil, errors.New("payment amount must be positive")
 	}
@@ -71,7 +75,7 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 		paymentMethod = "cash"
 	}
 
-	p, err := s.repo.Create(ctx, tripID, riderID, riderEmail, driverID, paymentMethod, providerName, amount)
+	p, err := s.repo.Create(ctx, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, providerName, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -93,41 +97,77 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 	return p, nil
 }
 
-// CreateOrder creates a provider order and moves the payment to PROCESSING.
+// CreateOrder creates a provider order and returns checkout details.
 func (s *paymentService) CreateOrder(ctx context.Context, paymentID string) (*model.OrderResponse, error) {
 	p, err := s.repo.FindByID(ctx, paymentID)
 	if err != nil {
 		return nil, fmt.Errorf("payment not found: %w", err)
 	}
-	if p.Status != model.StatusPending {
-		return nil, fmt.Errorf("payment is in status %s, expected PENDING", p.Status)
-	}
 
-	order, err := s.provider.CreateOrder(ctx, p.Amount, "INR", p.TripID)
-	if err != nil {
-		return nil, fmt.Errorf("create provider order: %w", err)
-	}
-
-	if err := s.repo.MarkProcessing(ctx, p.ID, order.ProviderOrderID); err != nil {
-		return nil, fmt.Errorf("mark processing: %w", err)
-	}
-
-	// Generate a 30-min checkout token so the HTML page can call authenticated endpoints
+	// Generate a 30-min checkout token
 	checkoutToken, err := jwt.GenerateCheckoutToken(p.RiderID, p.RiderEmail, "rider")
 	if err != nil {
 		return nil, fmt.Errorf("generate checkout token: %w", err)
 	}
-
 	checkoutURL := fmt.Sprintf("%s/payments/checkout/%s?token=%s", s.baseURL, p.ID, checkoutToken)
 
-	return &model.OrderResponse{
-		PaymentID:       p.ID,
-		ProviderOrderID: order.ProviderOrderID,
-		Amount:          p.Amount,
-		Currency:        "INR",
-		KeyID:           s.keyID,
-		CheckoutURL:     checkoutURL,
-	}, nil
+	switch p.PaymentMethod {
+	case "cash":
+		// Cash: no provider interaction; payment is already AWAITING_CASH_CONFIRM
+		if p.Status != model.StatusAwaitingCashConfirm {
+			return nil, fmt.Errorf("cash payment is in status %s, expected AWAITING_CASH_CONFIRM", p.Status)
+		}
+		return &model.OrderResponse{
+			PaymentID:   p.ID,
+			Amount:      p.Amount,
+			Currency:    "INR",
+			CheckoutURL: checkoutURL,
+		}, nil
+
+	case "upi":
+		if p.Status != model.StatusPending {
+			return nil, fmt.Errorf("payment is in status %s, expected PENDING", p.Status)
+		}
+		upiOrder, err := s.provider.CreateUPIOrder(ctx, p.Amount, "INR", p.TripID)
+		if err != nil {
+			return nil, fmt.Errorf("create UPI order: %w", err)
+		}
+		if err := s.repo.MarkProcessing(ctx, p.ID, upiOrder.ProviderOrderID, upiOrder.QRCodeID, upiOrder.QRImageURL); err != nil {
+			return nil, fmt.Errorf("mark processing: %w", err)
+		}
+		resp := &model.OrderResponse{
+			PaymentID:   p.ID,
+			Amount:      p.Amount,
+			Currency:    "INR",
+			KeyID:       s.keyID,
+			CheckoutURL: checkoutURL,
+		}
+		resp.ProviderOrderID = &upiOrder.ProviderOrderID
+		if upiOrder.QRImageURL != "" {
+			resp.UPIQRUrl = &upiOrder.QRImageURL
+		}
+		return resp, nil
+
+	default: // card
+		if p.Status != model.StatusPending {
+			return nil, fmt.Errorf("payment is in status %s, expected PENDING", p.Status)
+		}
+		order, err := s.provider.CreateOrder(ctx, p.Amount, "INR", p.TripID)
+		if err != nil {
+			return nil, fmt.Errorf("create provider order: %w", err)
+		}
+		if err := s.repo.MarkProcessing(ctx, p.ID, order.ProviderOrderID, "", ""); err != nil {
+			return nil, fmt.Errorf("mark processing: %w", err)
+		}
+		return &model.OrderResponse{
+			PaymentID:       p.ID,
+			ProviderOrderID: &order.ProviderOrderID,
+			Amount:          p.Amount,
+			Currency:        "INR",
+			KeyID:           s.keyID,
+			CheckoutURL:     checkoutURL,
+		}, nil
+	}
 }
 
 // VerifyPayment verifies the Razorpay signature from the frontend and completes the payment.
@@ -170,7 +210,15 @@ func (s *paymentService) HandleWebhook(ctx context.Context, body []byte, signatu
 		return nil // event we don't care about
 	}
 
-	p, err := s.repo.FindByProviderOrderID(ctx, result.ProviderOrderID)
+	// Look up payment: by order ID (card/UPI VPA) or by QR ID (UPI QR scan)
+	var p *model.Payment
+	if result.ProviderOrderID != "" {
+		p, err = s.repo.FindByProviderOrderID(ctx, result.ProviderOrderID)
+	} else if result.ProviderQRID != "" {
+		p, err = s.repo.FindByProviderQRID(ctx, result.ProviderQRID)
+	} else {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("webhook: payment lookup: %w", err)
 	}
@@ -212,7 +260,22 @@ func (s *paymentService) ConfirmCash(ctx context.Context, paymentID, driverID st
 	return p, nil
 }
 
-// SimulateSuccess completes any PENDING, PROCESSING, or AWAITING_CASH_CONFIRM payment without provider interaction.
+// InitiateUPICollect sends a UPI collect request to the rider's VPA.
+func (s *paymentService) InitiateUPICollect(ctx context.Context, paymentID, vpa string) error {
+	p, err := s.repo.FindByID(ctx, paymentID)
+	if err != nil {
+		return fmt.Errorf("payment not found: %w", err)
+	}
+	if p.PaymentMethod != "upi" {
+		return fmt.Errorf("not a UPI payment")
+	}
+	if p.Status != model.StatusProcessing {
+		return fmt.Errorf("payment is in status %s, expected PROCESSING", p.Status)
+	}
+	return s.provider.InitiateUPICollect(ctx, p.ProviderOrderID, vpa, p.RiderPhone, p.RiderEmail)
+}
+
+// SimulateSuccess completes any non-terminal payment without provider interaction (dev/testing only).
 func (s *paymentService) SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error) {
 	p, err := s.repo.FindByID(ctx, paymentID)
 	if err != nil {
