@@ -51,13 +51,27 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 
 	log.Printf("[matching] ride.requested → trip=%s rider=%s", ev.TripID, ev.RiderID)
 
+	const maxRetries = 5
+	const retryDelay = 15 * time.Second
+
 	drivers, err := geo.GetNearbyDrivers(ctx, ev.Pickup.Lat, ev.Pickup.Lng, 5.0, 5)
 	if err != nil {
 		log.Printf("[matching] redis error for trip %s: %v", ev.TripID, err)
 		return err
 	}
 	if len(drivers) == 0 {
-		log.Printf("[matching] no nearby drivers for trip %s", ev.TripID)
+		if ev.RetryCount >= maxRetries {
+			log.Printf("[matching] no drivers found after %d retries for trip %s, giving up", maxRetries, ev.TripID)
+			return nil
+		}
+		ev.RetryCount++
+		log.Printf("[matching] no drivers for trip %s, retry %d/%d in %s", ev.TripID, ev.RetryCount, maxRetries, retryDelay)
+		go func(retryEv kafka.RideRequestedEvent) {
+			time.Sleep(retryDelay)
+			if pubErr := pub.Publish(context.Background(), kafka.TopicRideRequested, retryEv.TripID, retryEv); pubErr != nil {
+				log.Printf("[matching] failed to re-publish ride.requested for trip %s: %v", retryEv.TripID, pubErr)
+			}
+		}(ev)
 		return nil
 	}
 

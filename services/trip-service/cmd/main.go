@@ -67,6 +67,42 @@ func main() {
 		return repo.AssignDriver(ctx, ev.TripID, ev.DriverID)
 	})
 
+	// Background poller: cancel trips stuck in REQUESTED > 5 minutes
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				stuck, err := repo.FindStuckTrips(ctx, 5*time.Minute)
+				if err != nil {
+					log.Printf("[trip-poller] error fetching stuck trips: %v", err)
+					continue
+				}
+				for _, t := range stuck {
+					now := time.Now()
+					if err := repo.CancelTrip(ctx, t.ID, now); err != nil {
+						log.Printf("[trip-poller] failed to cancel trip %s: %v", t.ID, err)
+						continue
+					}
+					ev := kafka.TripCancelledEvent{
+						TripID:      t.ID,
+						RiderID:     t.RiderID,
+						RiderEmail:  t.RiderEmail,
+						Reason:      "no_driver_available",
+						CancelledAt: now.Format(time.RFC3339),
+					}
+					if err := kafkaClient.Publish(ctx, kafka.TopicTripCancelled, t.ID, ev); err != nil {
+						log.Printf("[trip-poller] failed to publish trip.cancelled for %s: %v", t.ID, err)
+					}
+					log.Printf("[trip-poller] cancelled stuck trip %s (no driver after 5 min)", t.ID)
+				}
+			}
+		}
+	}()
+
 	wsHub := tracking.NewHub(cfg.AllowedOrigins)
 	h := controllers.New(svc, wsHub, cfg.InternalSecret)
 

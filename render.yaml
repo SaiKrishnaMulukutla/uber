@@ -3,6 +3,7 @@ databases:
     databaseName: uber
     user: uber
     plan: free
+    region: singapore
 
 services:
   # ── API Gateway ────────────────────────────────────────────────────────────
@@ -12,6 +13,7 @@ services:
     dockerfilePath: ./infra/nginx.Dockerfile
     dockerContext: ./infra
     plan: free
+    region: singapore
     envVars:
       - key: USER_SERVICE_URL
         sync: false
@@ -31,6 +33,7 @@ services:
     dockerfilePath: ./services/user-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -62,6 +65,7 @@ services:
     dockerfilePath: ./services/driver-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -87,6 +91,7 @@ services:
     dockerfilePath: ./services/trip-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -114,6 +119,7 @@ services:
     dockerfilePath: ./services/matching-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: REDIS_ADDR
         sync: false
@@ -133,6 +139,7 @@ services:
     dockerfilePath: ./services/notification-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -162,6 +169,7 @@ services:
     dockerfilePath: ./services/payment-service/Dockerfile
     dockerContext: .
     plan: free
+    region: singapore
     envVars:
       - key: DATABASE_URL
         fromDatabase:
