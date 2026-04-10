@@ -12,14 +12,13 @@ import (
 // PaymentRepository defines all persistence operations for payments.
 type PaymentRepository interface {
 	Create(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error)
-	MarkProcessing(ctx context.Context, id, providerOrderID, providerQRID, providerQRURL string) error
+	MarkProcessing(ctx context.Context, id, providerOrderID string) error
 	MarkAwaitingCashConfirm(ctx context.Context, id string) error
 	MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error
 	MarkFailed(ctx context.Context, id, reason string) error
 	FindByID(ctx context.Context, id string) (*model.Payment, error)
 	FindByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error)
-	FindByProviderQRID(ctx context.Context, qrID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Payment, int, error)
 }
 
@@ -34,7 +33,6 @@ func NewRepository(db *pgxpool.Pool) PaymentRepository {
 
 const selectCols = `id, trip_id, rider_id, rider_email, rider_phone, driver_id, amount, status, payment_method, provider,
 	COALESCE(provider_order_id, ''), COALESCE(provider_payment_id, ''), COALESCE(failure_reason, ''),
-	COALESCE(provider_qr_id, ''), COALESCE(provider_qr_url, ''),
 	attempts_count, created_at, completed_at, updated_at`
 
 type scanner interface {
@@ -47,7 +45,6 @@ func scanPayment(row scanner) (*model.Payment, error) {
 		&p.ID, &p.TripID, &p.RiderID, &p.RiderEmail, &p.RiderPhone, &p.DriverID, &p.Amount, &p.Status,
 		&p.PaymentMethod, &p.Provider,
 		&p.ProviderOrderID, &p.ProviderPaymentID, &p.FailureReason,
-		&p.ProviderQRID, &p.ProviderQRURL,
 		&p.AttemptsCount, &p.CreatedAt, &p.CompletedAt, &p.UpdatedAt,
 	)
 	if err != nil {
@@ -64,8 +61,7 @@ func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, rider
 		RETURNING ` + selectCols
 	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, riderEmail, riderPhone, driverID, amount, paymentMethod, providerName))
 	if err != nil {
-		// pgx returns pgx.ErrNoRows when ON CONFLICT suppresses the INSERT
-		return nil, nil //nolint:nilerr
+		return nil, nil //nolint:nilerr // ON CONFLICT suppressed the INSERT
 	}
 	return p, nil
 }
@@ -77,20 +73,17 @@ func (r *pgPaymentRepository) MarkAwaitingCashConfirm(ctx context.Context, id st
 	return err
 }
 
-// MarkProcessing transitions a payment to PROCESSING and stores the provider order/QR IDs.
-// Pass empty strings for providerQRID/providerQRURL when not applicable (card payments).
-func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID, providerQRID, providerQRURL string) error {
+// MarkProcessing transitions a payment to PROCESSING and stores the provider order ID.
+func (r *pgPaymentRepository) MarkProcessing(ctx context.Context, id, providerOrderID string) error {
 	const q = `UPDATE payments
 		SET status = 'PROCESSING', provider_order_id = $2,
-		    provider_qr_id = NULLIF($3, ''), provider_qr_url = NULLIF($4, ''),
 		    attempts_count = attempts_count + 1, updated_at = NOW()
 		WHERE id = $1`
-	_, err := r.db.Exec(ctx, q, id, providerOrderID, providerQRID, providerQRURL)
+	_, err := r.db.Exec(ctx, q, id, providerOrderID)
 	return err
 }
 
 // MarkCompleted transitions a payment to COMPLETED.
-// The status guard prevents a concurrent webhook + verify from double-completing.
 func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id, providerPaymentID, providerSignature string, completedAt time.Time) error {
 	const q = `UPDATE payments
 		SET status = 'COMPLETED', provider_payment_id = $2, provider_signature = $3,
@@ -101,7 +94,6 @@ func (r *pgPaymentRepository) MarkCompleted(ctx context.Context, id, providerPay
 }
 
 // MarkFailed transitions a payment to FAILED and records the reason.
-// The status guard prevents overwriting a COMPLETED or already-FAILED payment.
 func (r *pgPaymentRepository) MarkFailed(ctx context.Context, id, reason string) error {
 	const q = `UPDATE payments
 		SET status = 'FAILED', failure_reason = $2, updated_at = NOW()
@@ -126,12 +118,6 @@ func (r *pgPaymentRepository) FindByTripID(ctx context.Context, tripID string) (
 func (r *pgPaymentRepository) FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error) {
 	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_order_id = $1`
 	return scanPayment(r.db.QueryRow(ctx, q, providerOrderID))
-}
-
-// FindByProviderQRID retrieves a payment by its Razorpay QR code ID (for qr_code.credited webhook).
-func (r *pgPaymentRepository) FindByProviderQRID(ctx context.Context, qrID string) (*model.Payment, error) {
-	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_qr_id = $1`
-	return scanPayment(r.db.QueryRow(ctx, q, qrID))
 }
 
 // ListByUser returns paginated payments for a rider or driver.
