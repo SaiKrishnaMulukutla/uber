@@ -48,17 +48,6 @@ func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
 		payment.ProviderOrderID, payment.ProviderPaymentID, payment.PaymentMethod, qrBase64))
 }
 
-// CheckoutCash handles cash payment confirmation.
-func (h *Handler) CheckoutCash(w http.ResponseWriter, r *http.Request) {
-	paymentID := chi.URLParam(r, "id")
-	payment, err := h.svc.SimulateSuccess(r.Context(), paymentID)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": payment.Status, "amount": payment.Amount})
-}
-
 // CheckoutUPI handles UPI payment confirmation.
 func (h *Handler) CheckoutUPI(w http.ResponseWriter, r *http.Request) {
 	paymentID := chi.URLParam(r, "id")

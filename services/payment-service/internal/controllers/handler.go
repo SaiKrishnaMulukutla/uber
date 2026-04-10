@@ -44,8 +44,7 @@ func (h *Handler) Routes() chi.Router {
 	// Checkout actions — checkout token or access token accepted
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireCheckoutAuth)
-		r.Post("/checkout/{id}/cash", h.CheckoutCash)
-		r.Post("/checkout/{id}/upi", h.CheckoutUPI)
+		r.Post("/checkout/{id}/upi", h.CheckoutUPI) // rider self-attests UPI payment
 		r.Post("/verify", h.VerifyPayment)
 	})
 
