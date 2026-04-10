@@ -239,7 +239,7 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | GET | `/payments/checkout/{id}` | — | HTML checkout page — auto-selects cash/UPI/card tab |
 | WS | `/payments/ws/{id}` | — | WebSocket — pushes completion signal to checkout page |
 | POST | `/payments/{id}/confirm-cash` | Bearer (driver) | Driver confirms cash received → completes payment |
-| POST | `/payments/checkout/{id}/upi` | Checkout token | Rider self-attests UPI payment |
+| POST | `/payments/checkout/{id}/upi` | Checkout token | Send Razorpay UPI collect request to rider's VPA |
 | POST | `/payments/orders` | Bearer (rider) | Create Razorpay order → returns `checkout_url`, `provider_order_id`, `key_id` |
 | POST | `/payments/verify` | Checkout token | Submit Razorpay signature → completes payment |
 | POST | `/payments/webhook` | HMAC | Razorpay async backup confirmation |
@@ -349,17 +349,28 @@ PATCH /trips/{id}/end
         └─► payment-service: INSERT status=PENDING
 
 POST /payments/orders  { payment_id }
-  ← { checkout_url (with short-lived token), provider_order_id, key_id }
+  ← { checkout_url, provider_order_id, upi_qr_url, key_id }
+  payment status → PROCESSING
+  (Razorpay Order + QR Code created; QR image hosted by Razorpay)
 
 Rider opens checkout_url → UPI tab auto-selected
-  └─► QR code displayed (upi://pay?pa=<vpa>&am=<amount>)
-  └─► Rider scans QR / enters VPA in UPI app → completes payment
-  └─► Clicks "I've Paid" → 5s countdown → POST /payments/checkout/{id}/upi
-        └─► status=COMPLETED (rider self-attests; no gateway verification)
-              └─► payment.completed (Kafka) + WebSocket push
-```
 
-> **Note:** UPI completion is rider self-attested. A production system would poll a payment gateway for transaction status before marking COMPLETED.
+  ── Option A: QR Scan ────────────────────────────────────────────
+  Rider scans upi_qr_url QR with any UPI app and approves payment
+  └─► Razorpay fires qr_code.credited webhook
+        └─► POST /payments/webhook (HMAC verified)
+              └─► FindByProviderQRID → status=COMPLETED
+                    └─► payment.completed (Kafka) + WebSocket push → page shows success
+
+  ── Option B: VPA Collect ────────────────────────────────────────
+  Rider enters UPI ID (e.g. name@paytm) → POST /payments/checkout/{id}/upi { vpa }
+  └─► Razorpay UPI collect push sent to rider's UPI app
+  Rider approves in app
+  └─► Razorpay fires payment.captured webhook
+        └─► POST /payments/webhook (HMAC verified)
+              └─► FindByProviderOrderID → status=COMPLETED
+                    └─► payment.completed (Kafka) + WebSocket push → page shows success
+```
 
 ### Card (Razorpay)
 
@@ -416,9 +427,9 @@ RAZORPAY_KEY_SECRET=...
 RAZORPAY_WEBHOOK_SECRET=...   # from Razorpay Dashboard → Webhooks
 ```
 
-Configure the webhook URL in the [Razorpay Dashboard](https://dashboard.razorpay.com) → Webhooks:
+The webhook URL is automatically registered on startup. To configure manually in the [Razorpay Dashboard](https://dashboard.razorpay.com) → Webhooks:
 - **URL:** `https://your-domain.com/payments/webhook`
-- **Event:** `payment.captured`
+- **Events:** `payment.captured` (card + UPI VPA collect), `qr_code.credited` (UPI QR scan)
 
 For local testing use `ngrok http 8000` to expose a public HTTPS URL.
 
@@ -441,8 +452,8 @@ REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
 
 ```
 cash:  PENDING ──► AWAITING_CASH_CONFIRM ──► COMPLETED  (driver confirms)
-upi:   PENDING ──────────────────────────► COMPLETED  (rider self-attests)
-card:  PENDING ──► PROCESSING ──► COMPLETED  (Razorpay signature verified)
+upi:   PENDING ──► PROCESSING ──► COMPLETED  (Razorpay QR scan or VPA collect webhook)
+card:  PENDING ──► PROCESSING ──► COMPLETED  (Razorpay signature verified or webhook)
                        └────────► FAILED
 ```
 

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order — tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister → Login (OTP) → Driver Online → Set Location → Request Trip → *(~3s Kafka matching)* → Start Trip → Push Locations → End Trip → Rate → View Payment → View Notifications\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
+    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(~3s Kafka matching)* \u2192 Start Trip \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -97,7 +97,7 @@
                 "health"
               ]
             },
-            "description": "Health check served directly by NGINX — no backend involved. Confirms the gateway itself is running."
+            "description": "Health check served directly by NGINX \u2014 no backend involved. Confirms the gateway itself is running."
           },
           "response": [
             {
@@ -159,7 +159,7 @@
                 "register"
               ]
             },
-            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2–200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
+            "description": "Create a new rider account. Returns JWT tokens and user profile.\n\n**Validation rules:**\n- name: 2\u2013200 chars\n- email: valid format\n- phone: E.164 format (e.g. +919999999999)\n- password: minimum 6 chars"
           },
           "response": [
             {
@@ -209,7 +209,7 @@
           ]
         },
         {
-          "name": "2. Login Rider (Step 1 — send OTP)",
+          "name": "2. Login Rider (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -232,7 +232,7 @@
                 "login"
               ]
             },
-            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
+            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the rider's email. Returns 202 with no token. Check email for OTP, then run Verify Rider Login."
           },
           "response": [
             {
@@ -267,7 +267,7 @@
           ]
         },
         {
-          "name": "3. Verify Rider Login (Step 2 — exchange OTP for JWT)",
+          "name": "3. Verify Rider Login (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -290,7 +290,7 @@
                 "verify-login"
               ]
             },
-            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
+            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
@@ -508,7 +508,7 @@
           ]
         },
         {
-          "name": "2. Login Driver (Step 1 — send OTP)",
+          "name": "2. Login Driver (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -531,7 +531,7 @@
                 "login"
               ]
             },
-            "description": "2FA Step 1 — validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
+            "description": "2FA Step 1 \u2014 validates password and sends a 6-digit OTP to the driver's email. Returns 202 with no token. Check email for OTP, then run Verify Driver Login."
           },
           "response": [
             {
@@ -566,7 +566,7 @@
           ]
         },
         {
-          "name": "3. Verify Driver Login (Step 2 — exchange OTP for JWT)",
+          "name": "3. Verify Driver Login (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -589,7 +589,7 @@
                 "verify-login"
               ]
             },
-            "description": "2FA Step 2 — verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
+            "description": "2FA Step 2 \u2014 verifies the OTP from email and issues access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
@@ -924,7 +924,7 @@
                 "estimate"
               ]
             },
-            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km"
+            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** \u20b950 (base) + \u20b912 \u00d7 distance_km"
           },
           "response": [
             {
@@ -979,7 +979,7 @@
                 "request"
               ]
             },
-            "description": "Request a new ride. Publishes `ride.requested` to Kafka → Matching service finds driver → publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
+            "description": "Request a new ride. Publishes `ride.requested` to Kafka \u2192 Matching service finds driver \u2192 publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
           },
           "response": [
             {
@@ -1032,11 +1032,11 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED → DRIVER_ASSIGNED → STARTED → COMPLETED / CANCELLED"
+            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED"
           },
           "response": [
             {
-              "name": "200 OK — DRIVER_ASSIGNED",
+              "name": "200 OK \u2014 DRIVER_ASSIGNED",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"fare\": 0,\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
@@ -1094,7 +1094,7 @@
                 "assign"
               ]
             },
-            "description": "Manually assign a driver to a REQUESTED trip. In production this is called exclusively by matching-service via the `X-Internal-Secret` header — not by end-user clients.\n\nSet the `internal_secret` collection variable to the value of your `INTERNAL_SECRET` env var before running."
+            "description": "Manually assign a driver to a REQUESTED trip. In production this is called exclusively by matching-service via the `X-Internal-Secret` header \u2014 not by end-user clients.\n\nSet the `internal_secret` collection variable to the value of your `INTERNAL_SECRET` env var before running."
           },
           "response": [
             {
@@ -1242,7 +1242,7 @@
                 "end"
               ]
             },
-            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` → Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
+            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` \u2192 Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
           },
           "response": [
             {
@@ -1262,7 +1262,7 @@
                   "  const body = pm.response.json();",
                   "  pm.expect(body.status).to.eql('COMPLETED');",
                   "  pm.expect(body.fare).to.be.a('number').and.above(0);",
-                  "  console.log('Fare: ₹' + body.fare);",
+                  "  console.log('Fare: \u20b9' + body.fare);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -1299,7 +1299,7 @@
                 "rate"
               ]
             },
-            "description": "Submit a rating (1–5) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` → Driver/User service updates average rating."
+            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` \u2192 Driver/User service updates average rating."
           },
           "response": [
             {
@@ -1483,10 +1483,16 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/payments/checkout/{{payment_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["payments", "checkout", "{{payment_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "checkout",
+                "{{payment_id}}"
+              ]
             },
-            "description": "Opens the Uber-branded payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** → Cash tab — opens directly in **waiting state** (no rider button). Shows steps: hand cash → driver confirms → page updates automatically via WebSocket.\n- **upi** → UPI tab — shows scannable QR pointing to `themulukutla@ybl` + VPA input toggle. Rider clicks 'I've Paid' → 5s countdown → self-attests via `/checkout/{id}/upi`.\n- **card** → Card tab — Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in `POST /payments/orders` as `checkout_url`.\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page → sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls `POST /payments/{id}/confirm-cash` (Request 3 below)\n4. WebSocket pushes completion → page shows success automatically\n\nNote: `/checkout/{id}/cash` route does NOT exist — cash completion is driver-only."
+            "description": "Opens the Uber-branded payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** \u2192 Cash tab \u2014 waiting state (no rider action). Shows steps: hand cash \u2192 driver confirms \u2192 page updates via WebSocket.\n- **upi** \u2192 UPI tab \u2014 shows Razorpay-hosted QR image (scan with any UPI app) + VPA input. QR scan fires  webhook; VPA collect fires  webhook. Page updates via WebSocket when either succeeds \u2014 no countdown timer.\n- **card** \u2192 Card tab \u2014 Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in  as .\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page \u2192 sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls  (Request 3 below)\n4. WebSocket pushes completion \u2192 page shows success automatically"
           },
           "response": []
         },
@@ -1502,14 +1508,20 @@
             ],
             "url": {
               "raw": "{{base_url}}/payments/{{payment_id}}/confirm-cash",
-              "host": ["{{base_url}}"],
-              "path": ["payments", "{{payment_id}}", "confirm-cash"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "{{payment_id}}",
+                "confirm-cash"
+              ]
             },
-            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM → COMPLETED`\n\nPublishes `payment.completed` to Kafka → triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
+            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM \u2192 COMPLETED`\n\nPublishes `payment.completed` to Kafka \u2192 triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
           },
           "response": [
             {
-              "name": "200 OK — Cash Confirmed",
+              "name": "200 OK \u2014 Cash Confirmed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-04-10T08:00:00Z\"\n}"
@@ -1570,7 +1582,7 @@
                 "simulate-success"
               ]
             },
-            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka → triggers in-app notification and email to rider."
+            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka \u2192 triggers in-app notification and email to rider."
           },
           "response": [
             {
@@ -1699,7 +1711,7 @@
           },
           "response": [
             {
-              "name": "200 OK — Payment Completed",
+              "name": "200 OK \u2014 Payment Completed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"razorpay\",\n  \"completed_at\": \"2026-03-08T10:25:10Z\"\n}"
@@ -1809,7 +1821,7 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of ₹112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of \u20b9112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
             }
           ],
           "event": [
@@ -1903,7 +1915,7 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "**WebSocket endpoint** — real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
+            "description": "**WebSocket endpoint** \u2014 real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
           }
         }
       ]
