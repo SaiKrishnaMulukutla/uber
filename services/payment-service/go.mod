@@ -8,7 +8,6 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/jackc/pgx/v5 v5.5.1
 	github.com/razorpay/razorpay-go v1.4.0
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	uber/shared v0.0.0
 )
 

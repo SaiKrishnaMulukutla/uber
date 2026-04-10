@@ -1,1 +1,0 @@
-ALTER TABLE payments ALTER COLUMN status TYPE VARCHAR(30);

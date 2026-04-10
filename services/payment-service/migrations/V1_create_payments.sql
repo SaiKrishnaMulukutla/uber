@@ -1,21 +1,23 @@
 CREATE TABLE IF NOT EXISTS payments (
-    id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    trip_id              UUID        NOT NULL UNIQUE,
-    rider_id             UUID        NOT NULL,
-    driver_id            UUID        NOT NULL,
+    id                   UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+    trip_id              UUID          NOT NULL UNIQUE,
+    rider_id             UUID          NOT NULL,
+    rider_email          VARCHAR(255)  NOT NULL DEFAULT '',
+    rider_phone          VARCHAR(20)   NOT NULL DEFAULT '',
+    driver_id            UUID          NOT NULL,
     amount               DECIMAL(12,2) NOT NULL,
-    status               VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    payment_method       VARCHAR(30) NOT NULL DEFAULT 'cash',
-    provider             VARCHAR(20) NOT NULL DEFAULT 'cash',
+    status               VARCHAR(30)   NOT NULL DEFAULT 'PENDING',
+    payment_method       VARCHAR(30)   NOT NULL DEFAULT 'cash',
+    provider             VARCHAR(20)   NOT NULL DEFAULT 'cash',
     provider_order_id    VARCHAR(100),
     provider_payment_id  VARCHAR(100),
     provider_signature   VARCHAR(512),
     failure_reason       TEXT,
-    metadata             JSONB       NOT NULL DEFAULT '{}',
-    attempts_count       INT         NOT NULL DEFAULT 0,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    metadata             JSONB         NOT NULL DEFAULT '{}',
+    attempts_count       INT           NOT NULL DEFAULT 0,
+    created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
     completed_at         TIMESTAMPTZ,
-    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_payments_rider_id          ON payments(rider_id);

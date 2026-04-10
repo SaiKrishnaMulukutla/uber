@@ -13,7 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"uber/shared/pkg/jwt"
-	
+
 	"uber/payment-service/internal/model"
 )
 
@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 }
 
 func paymentRouter(mock *mockPaymentService) http.Handler {
-	h := NewHandler(mock, nil)
+	h := NewHandler(mock, nil, "")
 	r := chi.NewRouter()
 	r.Use(jwt.OptionalAuth)
 	r.Mount("/payments", h.Routes())
