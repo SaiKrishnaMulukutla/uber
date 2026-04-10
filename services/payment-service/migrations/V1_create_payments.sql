@@ -12,8 +12,6 @@ CREATE TABLE IF NOT EXISTS payments (
     provider_order_id    VARCHAR(100),
     provider_payment_id  VARCHAR(100),
     provider_signature   VARCHAR(512),
-    provider_qr_id       VARCHAR(100),
-    provider_qr_url      TEXT,
     failure_reason       TEXT,
     metadata             JSONB         NOT NULL DEFAULT '{}',
     attempts_count       INT           NOT NULL DEFAULT 0,
@@ -25,4 +23,3 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_rider_id          ON payments(rider_id);
 CREATE INDEX IF NOT EXISTS idx_payments_driver_id         ON payments(driver_id);
 CREATE INDEX IF NOT EXISTS idx_payments_provider_order_id ON payments(provider_order_id);
-CREATE INDEX IF NOT EXISTS idx_payments_provider_qr_id    ON payments(provider_qr_id);

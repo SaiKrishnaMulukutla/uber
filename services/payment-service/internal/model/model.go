@@ -23,8 +23,6 @@ type Payment struct {
 	Provider          string     `json:"provider"`
 	ProviderOrderID   string     `json:"provider_order_id,omitempty"`
 	ProviderPaymentID string     `json:"provider_payment_id,omitempty"`
-	ProviderQRID      string     `json:"provider_qr_id,omitempty"`
-	ProviderQRURL     string     `json:"provider_qr_url,omitempty"`
 	FailureReason     string     `json:"failure_reason,omitempty"`
 	AttemptsCount     int        `json:"attempts_count"`
 	CreatedAt         time.Time  `json:"created_at"`
@@ -36,7 +34,6 @@ type Payment struct {
 type OrderResponse struct {
 	PaymentID       string  `json:"payment_id"`
 	ProviderOrderID *string `json:"provider_order_id"` // null for cash
-	UPIQRUrl        *string `json:"upi_qr_url,omitempty"`
 	Amount          float64 `json:"amount"`
 	Currency        string  `json:"currency"`
 	KeyID           string  `json:"key_id,omitempty"`
