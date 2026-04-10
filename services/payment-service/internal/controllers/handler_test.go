@@ -72,9 +72,6 @@ func (m *mockPaymentService) SimulateSuccess(ctx context.Context, paymentID stri
 	}
 	return nil, nil
 }
-func (m *mockPaymentService) InitiateUPICollect(ctx context.Context, paymentID, vpa string) error {
-	return nil
-}
 
 // ---------- helpers ----------
 
