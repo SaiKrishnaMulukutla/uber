@@ -53,6 +53,12 @@ func main() {
 	); err != nil {
 		log.Fatal(err)
 	}
+	kafkaClient.WarmWriters(
+		kafka.TopicRideRequested,
+		kafka.TopicTripCompleted,
+		kafka.TopicTripCancelled,
+		kafka.TopicRatingSubmitted,
+	)
 
 	repo := repositories.NewRepository(pool)
 	svc := service.New(repo, kafkaClient, redisClient)
