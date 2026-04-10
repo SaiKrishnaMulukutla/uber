@@ -1,13 +1,12 @@
 package controllers
 
 import (
-	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
-	qrcode "github.com/skip2/go-qrcode"
 )
 
 // CheckoutWS upgrades to WebSocket and waits for payment completion signal.
@@ -33,33 +32,37 @@ func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate UPI QR code (server-side, embedded as base64 PNG)
-	upiURI := fmt.Sprintf(
-		"upi://pay?pa=themulukutla@ybl&pn=Uber%%20Ride&am=%.2f&cu=INR&tn=Trip%%20Payment%%20%%23%s",
-		payment.Amount, url.QueryEscape(payment.TripID[:8]),
-	)
-	var qrBase64 string
-	if png, err := qrcode.Encode(upiURI, qrcode.Medium, 240); err == nil {
-		qrBase64 = base64.StdEncoding.EncodeToString(png)
-	}
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, renderCheckout(paymentID, token, payment.Amount, payment.TripID,
-		payment.ProviderOrderID, payment.ProviderPaymentID, payment.PaymentMethod, qrBase64))
+	fmt.Fprint(w, renderCheckout(
+		paymentID, token, payment.Amount, payment.TripID,
+		payment.ProviderOrderID, h.keyID, payment.PaymentMethod, payment.ProviderQRURL,
+	))
 }
 
-// CheckoutUPI handles UPI payment confirmation.
+// CheckoutUPI initiates a Razorpay UPI collect request to the rider's VPA.
+// Body: {"vpa": "user@paytm"}
 func (h *Handler) CheckoutUPI(w http.ResponseWriter, r *http.Request) {
 	paymentID := chi.URLParam(r, "id")
-	payment, err := h.svc.SimulateSuccess(r.Context(), paymentID)
-	if err != nil {
+	var body struct {
+		VPA string `json:"vpa"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	body.VPA = strings.TrimSpace(body.VPA)
+	if body.VPA == "" || !strings.Contains(body.VPA, "@") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid UPI ID format"})
+		return
+	}
+	if err := h.svc.InitiateUPICollect(r.Context(), paymentID, body.VPA); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": payment.Status, "amount": payment.Amount})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "collect_sent"})
 }
 
-func renderCheckout(paymentID, token string, amount float64, tripID, providerOrderID, keyID, paymentMethod, qrBase64 string) string {
+func renderCheckout(paymentID, token string, amount float64, tripID, providerOrderID, keyID, paymentMethod, upiQRURL string) string {
 	wsPath := "/payments/ws/" + paymentID
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
@@ -87,12 +90,12 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 .cash-icon{text-align:center;font-size:48px;margin-bottom:16px}
 .cash-amount{text-align:center;font-size:32px;font-weight:700;margin-bottom:6px}
 .cash-sub{text-align:center;font-size:13px;color:#888;margin-bottom:16px}
-.cash-note{font-size:13px;color:#555;line-height:1.6;text-align:center;background:#f9f9f9;border-radius:6px;padding:14px;margin-bottom:24px}
-.cash-waiting{text-align:center;padding:8px 0}
 .cash-steps{list-style:none;text-align:left;margin:0 0 20px;padding:0}
 .cash-steps li{display:flex;align-items:flex-start;gap:10px;padding:8px 0;font-size:13px;color:#555;border-bottom:1px solid #f0f0f0}
 .cash-steps li:last-child{border:none}
 .step-num{background:#000;color:#fff;border-radius:50%%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
+.pulse-ring{width:64px;height:64px;border:3px solid #000;border-radius:50%%;margin:0 auto 16px;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%%,100%%{opacity:1;transform:scale(1)}50%%{opacity:.4;transform:scale(1.08)}}
 
 /* UPI */
 .upi-app-row{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
@@ -121,12 +124,8 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
 
 /* Waiting state */
 .upi-waiting{display:none;text-align:center;padding:16px 0}
-.pulse-ring{width:64px;height:64px;border:3px solid #000;border-radius:50%%;margin:0 auto 16px;animation:pulse 1.4s ease-in-out infinite}
-@keyframes pulse{0%%,100%%{opacity:1;transform:scale(1)}50%%{opacity:.4;transform:scale(1.08)}}
 .waiting-title{font-size:15px;font-weight:700;margin-bottom:6px}
-.waiting-sub{font-size:12px;color:#888;margin-bottom:16px}
-.timer{font-size:28px;font-weight:700;color:#000;margin-bottom:4px}
-.timer-label{font-size:11px;color:#bbb}
+.waiting-sub{font-size:12px;color:#888;margin-bottom:24px}
 .cancel-link{font-size:12px;color:#888;text-decoration:underline;cursor:pointer;background:none;border:none;margin-top:12px}
 
 /* Card */
@@ -175,15 +174,15 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
       <div class="cash-icon">&#128181;</div>
       <div class="cash-amount">&#8377;%.2f</div>
       <div class="cash-sub">Pay your driver directly in cash</div>
-      <div class="cash-waiting">
-        <ul class="cash-steps">
-          <li><span class="step-num">1</span>Hand <strong>&#8377;%.2f</strong> in cash to your driver</li>
-          <li><span class="step-num">2</span>Driver confirms receipt on their app</li>
-          <li><span class="step-num">3</span>This page updates automatically</li>
-        </ul>
+      <ul class="cash-steps">
+        <li><span class="step-num">1</span>Hand <strong>&#8377;%.2f</strong> in cash to your driver</li>
+        <li><span class="step-num">2</span>Driver confirms receipt on their app</li>
+        <li><span class="step-num">3</span>This page updates automatically</li>
+      </ul>
+      <div style="text-align:center">
         <div class="pulse-ring"></div>
-        <div class="waiting-title">Waiting for driver confirmation</div>
-        <div class="waiting-sub" style="margin-top:6px">Page will update once driver confirms</div>
+        <div style="font-size:14px;font-weight:700">Waiting for driver confirmation</div>
+        <div style="font-size:12px;color:#888;margin-top:6px">Page will update once driver confirms</div>
       </div>
     </div>
 
@@ -199,38 +198,29 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
       <!-- QR Section -->
       <div id="upi-qr-section">
         <div class="qr-box">
-          <img src="data:image/png;base64,%s" width="200" height="200" alt="UPI QR Code"/>
-          <div class="qr-label">Scan with any UPI app</div>
+          <img id="upi-qr-img" src="%s" width="200" height="200" alt="UPI QR Code"/>
+          <div class="qr-label">Scan with any UPI app to pay</div>
           <div class="qr-amount">&#8377;%.2f</div>
         </div>
-        <button class="btn" id="btn-qr-paid" onclick="startUPIWait('qr')">I've Paid</button>
-        <div class="upi-divider">or</div>
-        <div class="upi-toggle">
-          <button class="toggle-btn" onclick="showVPA()">Enter UPI ID instead</button>
-        </div>
+        <button class="btn" onclick="showUPIWaiting('Complete payment in your UPI app')">I've Paid</button>
+        <div class="upi-divider">or enter UPI ID</div>
       </div>
 
       <!-- VPA Section -->
-      <div id="upi-vpa-section" style="display:none">
+      <div id="upi-vpa-section">
         <div class="input-wrap">
           <label>UPI ID</label>
           <input id="upi-id" type="text" placeholder="yourname@paytm"/>
         </div>
-        <button class="btn" id="btn-upi-pay" onclick="startUPIWait('vpa')">Pay &#8377;%.2f via UPI</button>
-        <div class="upi-divider">or</div>
-        <div class="upi-toggle">
-          <button class="toggle-btn" onclick="showQR()">Scan QR code instead</button>
-        </div>
+        <button class="btn" id="btn-upi-pay" onclick="submitVPA()">Pay &#8377;%.2f via UPI ID</button>
       </div>
 
-      <!-- Waiting State -->
+      <!-- Waiting State (shared by QR and VPA) -->
       <div id="upi-waiting" class="upi-waiting">
         <div class="pulse-ring"></div>
         <div class="waiting-title">Waiting for payment...</div>
         <div class="waiting-sub" id="waiting-sub">Open your UPI app and approve the request</div>
-        <div class="timer" id="upi-timer">05</div>
-        <div class="timer-label">seconds remaining</div>
-        <button class="cancel-link" onclick="cancelUPI()">Cancel</button>
+        <button class="cancel-link" onclick="resetUPI()">Cancel</button>
       </div>
     </div>
 
@@ -262,8 +252,7 @@ const RZP_KEY    = %q;
 const RZP_ORDER  = %q;
 const WS_PATH    = %q;
 const METHOD     = %q;
-
-var upiTimer = null;
+const UPI_QR_URL = %q;
 
 // WebSocket for real-time completion push
 const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -283,62 +272,45 @@ function switchTab(tab) {
   if (tab === 'upi') resetUPI();
 }
 
-// Open on the rider's chosen method; default to UPI
+// Auto-select tab based on rider's chosen payment method
 switchTab((METHOD === 'cash' || METHOD === 'card') ? METHOD : 'upi');
 
-function showVPA() {
+// Hide QR section if no Razorpay QR URL (fallback: show VPA only)
+if (!UPI_QR_URL) {
   document.getElementById('upi-qr-section').style.display = 'none';
-  document.getElementById('upi-vpa-section').style.display = 'block';
+} else {
+  document.getElementById('upi-qr-img').src = UPI_QR_URL;
 }
-function showQR() {
-  document.getElementById('upi-vpa-section').style.display = 'none';
-  document.getElementById('upi-qr-section').style.display = 'block';
-}
+
 function resetUPI() {
-  clearInterval(upiTimer);
   document.getElementById('upi-waiting').style.display = 'none';
-  document.getElementById('upi-qr-section').style.display = 'block';
-  document.getElementById('upi-vpa-section').style.display = 'none';
-  document.getElementById('upi-timer').textContent = '05';
-}
-function cancelUPI() {
-  clearInterval(upiTimer);
-  resetUPI();
+  document.getElementById('upi-qr-section').style.display = UPI_QR_URL ? 'block' : 'none';
+  document.getElementById('upi-vpa-section').style.display = 'block';
+  document.getElementById('btn-upi-pay').disabled = false;
 }
 
-function startUPIWait(mode) {
-  if (mode === 'vpa') {
-    var id = document.getElementById('upi-id').value.trim();
-    if (!id || !id.includes('@')) { alert('Enter a valid UPI ID (e.g. name@paytm)'); return; }
-    document.getElementById('waiting-sub').textContent = 'Collect request sent to ' + id;
-  } else {
-    document.getElementById('waiting-sub').textContent = 'Complete payment in your UPI app';
-  }
-
+function showUPIWaiting(subtitle) {
   document.getElementById('upi-qr-section').style.display = 'none';
   document.getElementById('upi-vpa-section').style.display = 'none';
   document.getElementById('upi-waiting').style.display = 'block';
-
-  var secs = 5;
-  document.getElementById('upi-timer').textContent = '0' + secs;
-  upiTimer = setInterval(function() {
-    secs--;
-    document.getElementById('upi-timer').textContent = secs < 10 ? '0' + secs : '' + secs;
-    if (secs <= 0) {
-      clearInterval(upiTimer);
-      confirmUPI();
-    }
-  }, 1000);
+  document.getElementById('waiting-sub').textContent = subtitle;
 }
 
-async function confirmUPI() {
+async function submitVPA() {
+  var vpa = document.getElementById('upi-id').value.trim();
+  if (!vpa || !vpa.includes('@')) { alert('Enter a valid UPI ID (e.g. name@paytm)'); return; }
+  document.getElementById('btn-upi-pay').disabled = true;
   try {
-    var r = await fetch('/payments/checkout/' + PAYMENT_ID + '/upi?token=' + TOKEN, {method:'POST'});
+    var r = await fetch('/payments/checkout/' + PAYMENT_ID + '/upi', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
+      body: JSON.stringify({vpa: vpa})
+    });
     var d = await r.json();
     if (d.error) throw new Error(d.error);
-    showSuccess('upi', d.amount);
+    showUPIWaiting('Collect request sent to ' + vpa + '. Approve in your UPI app.');
   } catch(e) {
-    resetUPI();
+    document.getElementById('btn-upi-pay').disabled = false;
     alert('Error: ' + e.message);
   }
 }
@@ -374,7 +346,6 @@ function payCard() {
 
 function showSuccess(method, amount) {
   ws.close();
-  clearInterval(upiTimer);
   var labels = {cash:'Cash',card:'Credit/Debit Card',upi:'UPI',online:'Online'};
   document.querySelector('.tabs').style.display = 'none';
   document.querySelector('.body').innerHTML =
@@ -395,13 +366,13 @@ function showSuccess(method, amount) {
 </body>
 </html>`,
 		amount,   // header fare
-		amount,   // cash tab amount display
-		amount,   // cash steps "Hand ₹X" line
-		qrBase64, // QR code image
+		amount,   // cash tab amount
+		amount,   // cash steps "Hand ₹X"
+		upiQRURL, // QR image src
 		amount,   // QR amount label
 		amount,   // VPA pay button
 		amount,   // card pay button
-		paymentID, token, tripID, amount, keyID, providerOrderID, wsPath, paymentMethod)
+		paymentID, token, tripID, amount, keyID, providerOrderID, wsPath, paymentMethod, upiQRURL)
 }
 
 func renderSuccess(amount float64, method, tripID string) string {

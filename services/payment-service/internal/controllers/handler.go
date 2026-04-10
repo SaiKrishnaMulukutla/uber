@@ -20,6 +20,7 @@ type PaymentServicer interface {
 	VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
 	HandleWebhook(ctx context.Context, body []byte, signature string) error
 	ConfirmCash(ctx context.Context, paymentID, driverID string) (*model.Payment, error)
+	InitiateUPICollect(ctx context.Context, paymentID, vpa string) error
 	SimulateSuccess(ctx context.Context, paymentID string) (*model.Payment, error)
 	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
@@ -27,11 +28,14 @@ type PaymentServicer interface {
 }
 
 type Handler struct {
-	svc PaymentServicer
-	hub *hub.PaymentHub
+	svc   PaymentServicer
+	hub   *hub.PaymentHub
+	keyID string // Razorpay publishable key — embedded in checkout page HTML
 }
 
-func NewHandler(svc PaymentServicer, h *hub.PaymentHub) *Handler { return &Handler{svc: svc, hub: h} }
+func NewHandler(svc PaymentServicer, h *hub.PaymentHub, keyID string) *Handler {
+	return &Handler{svc: svc, hub: h, keyID: keyID}
+}
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
@@ -44,7 +48,7 @@ func (h *Handler) Routes() chi.Router {
 	// Checkout actions — checkout token or access token accepted
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireCheckoutAuth)
-		r.Post("/checkout/{id}/upi", h.CheckoutUPI) // rider self-attests UPI payment
+		r.Post("/checkout/{id}/upi", h.CheckoutUPI)
 		r.Post("/verify", h.VerifyPayment)
 	})
 
@@ -135,13 +139,12 @@ func (h *Handler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Webhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		w.WriteHeader(http.StatusOK) // always 200 to Razorpay
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 	sig := r.Header.Get("X-Razorpay-Signature")
 	if err := h.svc.HandleWebhook(r.Context(), body, sig); err != nil {
-		// Log but do not expose; always return 200 so Razorpay stops retrying
-		_ = err
+		_ = err // log but always return 200 so Razorpay stops retrying
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -157,7 +160,6 @@ func (h *Handler) Simulate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "payment_id is required"})
 		return
 	}
-	// Ownership check: fetch the payment and ensure the caller is the rider or driver.
 	existing, err := h.svc.GetByPaymentID(r.Context(), body.PaymentID)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "payment not found"})

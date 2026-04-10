@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS trips (
     id               UUID             PRIMARY KEY,
     rider_id         UUID             NOT NULL,
     rider_email      TEXT             NOT NULL DEFAULT '',
+    rider_phone      VARCHAR(20)      NOT NULL DEFAULT '',
     driver_id        UUID,
     pickup_lat       DOUBLE PRECISION NOT NULL,
     pickup_lng       DOUBLE PRECISION NOT NULL,
@@ -16,8 +17,7 @@ CREATE TABLE IF NOT EXISTS trips (
     completed_at     TIMESTAMPTZ,
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
--- Composite indexes cover both plain ID lookups and paginated history (ORDER BY created_at DESC).
+
 CREATE INDEX IF NOT EXISTS idx_trips_rider_created  ON trips(rider_id,  created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_trips_driver_created ON trips(driver_id, created_at DESC);
--- Status index for state-machine transition checks.
-CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
+CREATE INDEX IF NOT EXISTS idx_trips_status         ON trips(status);

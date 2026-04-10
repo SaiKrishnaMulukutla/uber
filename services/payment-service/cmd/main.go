@@ -51,7 +51,13 @@ func main() {
 	var prov provider.PaymentProvider
 	switch cfg.PaymentProvider {
 	case "razorpay":
-		prov = rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.TLSSkipVerify)
+		rzp := rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.TLSSkipVerify)
+		// Register webhook on startup (non-fatal if it fails)
+		webhookURL := cfg.BaseURL + "/payments/webhook"
+		if err := rzp.RegisterWebhook(ctx, webhookURL); err != nil {
+			log.Printf("[payments] webhook registration failed (non-fatal): %v", err)
+		}
+		prov = rzp
 		log.Println("[payments] using Razorpay payment provider")
 	default:
 		prov = cashprov.New()
@@ -70,11 +76,11 @@ func main() {
 			return err
 		}
 		log.Printf("[payments] trip.completed: trip=%s fare=%.2f method=%s", ev.TripID, ev.Fare, ev.PaymentMethod)
-		_, err := svc.InitPayment(ctx, ev.TripID, ev.RiderID, ev.RiderEmail, ev.DriverID, ev.PaymentMethod, ev.Fare)
+		_, err := svc.InitPayment(ctx, ev.TripID, ev.RiderID, ev.RiderEmail, ev.RiderPhone, ev.DriverID, ev.PaymentMethod, ev.Fare)
 		return err
 	})
 
-	h := controllers.NewHandler(svc, paymentHub)
+	h := controllers.NewHandler(svc, paymentHub, cfg.RazorpayKeyID)
 
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)

@@ -19,7 +19,7 @@ import (
 // ---------- mock ----------
 
 type mockTripService struct {
-	RequestFn      func(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error)
+	RequestFn      func(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByIDFn      func(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriverFn func(ctx context.Context, tripID, driverID string) (*model.Trip, error)
 	StartFn        func(ctx context.Context, tripID, callerID string) (*model.Trip, error)
@@ -32,8 +32,8 @@ type mockTripService struct {
 	PushLocationFn  func(ctx context.Context, tripID, driverID string, lat, lng float64) error
 }
 
-func (m *mockTripService) Request(ctx context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error) {
-	return m.RequestFn(ctx, riderID, riderEmail, req)
+func (m *mockTripService) Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error) {
+	return m.RequestFn(ctx, riderID, riderEmail, riderPhone, req)
 }
 func (m *mockTripService) GetByID(ctx context.Context, id string) (*model.Trip, error) {
 	return m.GetByIDFn(ctx, id)
@@ -107,7 +107,7 @@ func doRequest(router http.Handler, method, path string, body any, token string)
 
 func TestRequest_RequiresRiderRole(t *testing.T) {
 	mock := &mockTripService{
-		RequestFn: func(_ context.Context, riderID, riderEmail string, req model.TripRequest) (*model.Trip, error) {
+		RequestFn: func(_ context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error) {
 			return &model.Trip{ID: "t1", RiderID: riderID, Status: "REQUESTED"}, nil
 		},
 	}

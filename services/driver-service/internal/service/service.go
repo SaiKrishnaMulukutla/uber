@@ -84,7 +84,7 @@ func (s *driverService) Register(ctx context.Context, req model.RegisterRequest)
 		return nil, err
 	}
 
-	pair, err := jwt.GenerateTokenPair(d.ID, d.Email, model.RoleDriver)
+	pair, err := jwt.GenerateTokenPair(d.ID, d.Email, "", model.RoleDriver)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func (s *driverService) VerifyLogin(ctx context.Context, req model.VerifyLoginRe
 	if err != nil {
 		return nil, errors.New("driver not found")
 	}
-	pair, err := jwt.GenerateTokenPair(d.ID, d.Email, model.RoleDriver)
+	pair, err := jwt.GenerateTokenPair(d.ID, d.Email, "", model.RoleDriver)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (s *driverService) Refresh(ctx context.Context, refreshToken string) (*mode
 	if claims.Role != model.RoleDriver {
 		return nil, errors.New("invalid token role")
 	}
-	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, claims.Role)
+	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, "", claims.Role)
 	if err != nil {
 		return nil, err
 	}

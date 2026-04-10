@@ -28,6 +28,7 @@ type TripCompletedEvent struct {
 	DriverID        string  `json:"driver_id"`
 	RiderID         string  `json:"rider_id"`
 	RiderEmail      string  `json:"rider_email,omitempty"`
+	RiderPhone      string  `json:"rider_phone,omitempty"`
 	Fare            float64 `json:"fare"`
 	PaymentMethod   string  `json:"payment_method,omitempty"`
 	CompletedAt     string  `json:"completed_at"`
