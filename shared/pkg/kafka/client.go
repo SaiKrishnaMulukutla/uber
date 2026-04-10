@@ -120,7 +120,7 @@ func (c *Client) Publish(ctx context.Context, topic, key string, value any) erro
 	if err != nil {
 		return err
 	}
-	writeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return c.getWriter(topic).WriteMessages(writeCtx, kafkago.Message{
 		Key:   []byte(key),
