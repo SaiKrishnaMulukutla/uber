@@ -82,7 +82,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				stuck, err := repo.FindStuckTrips(ctx, 5*time.Minute)
+				stuck, err := repo.FindStuckTrips(ctx, 10*time.Minute)
 				if err != nil {
 					log.Printf("[trip-poller] error fetching stuck trips: %v", err)
 					continue
