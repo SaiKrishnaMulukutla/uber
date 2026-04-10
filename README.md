@@ -33,7 +33,7 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 - **OTP-based 2FA login** — email/password + 6-digit OTP via SMTP for both riders and drivers
 - **Geospatial driver matching** — Redis GEO `GEORADIUS` search finds the nearest available driver and assigns via Kafka
 - **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
-- **Multi-provider payments** — pluggable cash (default) or Razorpay; HMAC-verified webhooks for async confirmation
+- **Multi-method payments** — cash (driver-confirmed), UPI (scannable QR + VPA), or Razorpay card; browser-based checkout page with real-time WebSocket completion push
 - **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
 - **Event-driven consistency** — 6 Kafka topics decouple all services; no cross-service foreign keys
 - **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
@@ -117,7 +117,7 @@ payment completed
 | user-service | 8081 | users_db |
 | driver-service | 8082 | drivers_db |
 | trip-service | 8083 | trips_db |
-| matching-service | — | — |
+| matching-service | 8087 | — |
 | notification-service | 8084 | notifications_db |
 | payment-service | 8085 | payments_db |
 | PostgreSQL | 5433 | — |
@@ -130,10 +130,10 @@ payment completed
 
 | Topic | Publisher | Consumers |
 |-------|-----------|-----------|
-| `ride.requested` | trip-service | matching-service |
+| `ride.requested` | trip-service, matching-service (retry) | matching-service |
 | `driver.assigned` | matching-service | trip-service, driver-service, notification-service |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
-| `trip.cancelled` | trip-service | driver-service, notification-service |
+| `trip.cancelled` | trip-service (manual + auto-cancel poller) | driver-service, notification-service |
 | `rating.submitted` | trip-service | driver-service, user-service, notification-service |
 | `payment.completed` | payment-service | notification-service |
 
@@ -236,10 +236,14 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 |--------|------|------|-------------|
 | GET | `/payments/history` | Bearer | Paginated payment history |
 | GET | `/payments/{tripId}` | Bearer | Payment by trip (participants only) |
-| POST | `/payments/orders` | Bearer (rider) | Create Razorpay order → returns `provider_order_id` + `key_id` |
-| POST | `/payments/verify` | Bearer (rider) | Submit Razorpay signature → completes payment |
+| GET | `/payments/checkout/{id}` | — | HTML checkout page — auto-selects cash/UPI/card tab |
+| WS | `/payments/ws/{id}` | — | WebSocket — pushes completion signal to checkout page |
+| POST | `/payments/{id}/confirm-cash` | Bearer (driver) | Driver confirms cash received → completes payment |
+| POST | `/payments/checkout/{id}/upi` | Checkout token | Rider self-attests UPI payment |
+| POST | `/payments/orders` | Bearer (rider) | Create Razorpay order → returns `checkout_url`, `provider_order_id`, `key_id` |
+| POST | `/payments/verify` | Checkout token | Submit Razorpay signature → completes payment |
 | POST | `/payments/webhook` | HMAC | Razorpay async backup confirmation |
-| POST | `/payments/simulate-success` | Bearer | Complete payment without a provider (dev / test) |
+| POST | `/payments/simulate-success` | Bearer | Complete payment instantly (dev / test only) |
 
 ---
 
@@ -275,7 +279,7 @@ curl -s -X PATCH $BASE/drivers/$DRIVER_ID/location \
 TRIP=$(curl -s -X POST $BASE/trips/request \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"cash"}')
+  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"upi"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
 # 4. Wait for automatic matching (~3 s)
@@ -291,7 +295,20 @@ curl -s -X PATCH $BASE/trips/$TRIP_ID/end \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
   -H "Content-Type: application/json" -d '{}' | jq '{status,fare}'
 
-# 6. Rate, check notifications and payment
+# 6. Open checkout page (UPI QR auto-displayed; for cash tab — wait for driver to confirm)
+PAYMENT=$(curl -s $BASE/payments/$TRIP_ID -H "Authorization: Bearer $RIDER_TOKEN")
+PAYMENT_ID=$(echo $PAYMENT | jq -r '.id')
+CHECKOUT_URL=$(curl -s -X POST $BASE/payments/orders \
+  -H "Authorization: Bearer $RIDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"payment_id\":\"$PAYMENT_ID\"}" | jq -r '.checkout_url')
+echo "Open in browser: $CHECKOUT_URL"
+
+# For cash trips — driver confirms after collecting cash:
+# curl -s -X POST $BASE/payments/$PAYMENT_ID/confirm-cash \
+#   -H "Authorization: Bearer $DRIVER_TOKEN"
+
+# 7. Rate, check notifications and payment
 curl -s -X POST $BASE/trips/$TRIP_ID/rate \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
@@ -309,18 +326,40 @@ curl -s $BASE/payments/$TRIP_ID \
 
 ## Payment Flow
 
-### Cash (default)
+### Cash
 
 ```
 PATCH /trips/{id}/end
   └─► trip.completed (Kafka)
-        └─► payment-service: INSERT status=PENDING → COMPLETED
-              └─► payment.completed (Kafka) ──► notification-service
-                                                  ├─ in-app notification
-                                                  └─ email to rider
+        └─► payment-service: INSERT status=PENDING → AWAITING_CASH_CONFIRM
+
+Rider opens checkout page → sees waiting state (no action needed)
+
+Driver calls POST /payments/{id}/confirm-cash
+  └─► status=COMPLETED
+        └─► payment.completed (Kafka) ──► notification-service
+        └─► WebSocket hub broadcast ──► checkout page shows success
 ```
 
-No frontend steps required. Payment completes automatically.
+### UPI
+
+```
+PATCH /trips/{id}/end
+  └─► trip.completed (Kafka)
+        └─► payment-service: INSERT status=PENDING
+
+POST /payments/orders  { payment_id }
+  ← { checkout_url (with short-lived token), provider_order_id, key_id }
+
+Rider opens checkout_url → UPI tab auto-selected
+  └─► QR code displayed (upi://pay?pa=<vpa>&am=<amount>)
+  └─► Rider scans QR / enters VPA in UPI app → completes payment
+  └─► Clicks "I've Paid" → 5s countdown → POST /payments/checkout/{id}/upi
+        └─► status=COMPLETED (rider self-attests; no gateway verification)
+              └─► payment.completed (Kafka) + WebSocket push
+```
+
+> **Note:** UPI completion is rider self-attested. A production system would poll a payment gateway for transaction status before marking COMPLETED.
 
 ### Card (Razorpay)
 
@@ -392,18 +431,22 @@ For local testing use `ngrok http 8000` to expose a public HTTPS URL.
 ```
 REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
     │               │                              └─ payment created, rating unlocked
-    └── /cancel ──► CANCELLED
-                    └─ driver restored to GEO pool
+    │               └── /cancel ──► CANCELLED
+    │                              └─ driver restored to GEO pool
+    └── auto-cancel after 5 min (no driver found) ──► CANCELLED
+                    └─ trip-service poller + matching-service retries (up to 5× every 15s)
 ```
 
 ### Payment
 
 ```
-PENDING ──► PROCESSING ──► COMPLETED
-  │               │              └─ payment.completed published → email sent
-  │               └─────────────► FAILED
-  └─ cash / simulate ──────────► COMPLETED  (skips PROCESSING)
+cash:  PENDING ──► AWAITING_CASH_CONFIRM ──► COMPLETED  (driver confirms)
+upi:   PENDING ──────────────────────────► COMPLETED  (rider self-attests)
+card:  PENDING ──► PROCESSING ──► COMPLETED  (Razorpay signature verified)
+                       └────────► FAILED
 ```
+
+All paths publish `payment.completed` → email + in-app notification to rider.
 
 ### Fare Formula
 
