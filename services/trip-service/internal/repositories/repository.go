@@ -21,6 +21,8 @@ type TripRepository interface {
 	CancelTrip(ctx context.Context, tripID string, now time.Time) error
 	ListByRider(ctx context.Context, riderID string, limit, offset int) ([]*model.Trip, int, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) ([]*model.Trip, int, error)
+	// FindStuckTrips returns trips that have been in REQUESTED status longer than olderThan.
+	FindStuckTrips(ctx context.Context, olderThan time.Duration) ([]*model.Trip, error)
 	// CreateRating inserts a rating. Returns (rating, true, nil) when newly inserted,
 	// (rating, false, nil) when the rating already existed (idempotent on Kafka retry).
 	CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, bool, error)
@@ -150,6 +152,30 @@ func (r *pgTripRepository) queryTrips(ctx context.Context, total int, query stri
 		return nil, 0, err
 	}
 	return trips, total, nil
+}
+
+func (r *pgTripRepository) FindStuckTrips(ctx context.Context, olderThan time.Duration) ([]*model.Trip, error) {
+	cutoff := time.Now().Add(-olderThan)
+	rows, err := r.pool.Query(ctx,
+		`SELECT id,rider_id,rider_email,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
+		        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
+		 FROM trips WHERE status=$1 AND requested_at < $2`,
+		model.StatusRequested, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var trips []*model.Trip
+	for rows.Next() {
+		var t model.Trip
+		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.DriverID,
+			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
+			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		trips = append(trips, &t)
+	}
+	return trips, rows.Err()
 }
 
 func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, bool, error) {

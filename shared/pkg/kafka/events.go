@@ -13,6 +13,7 @@ type RideRequestedEvent struct {
 	Pickup      LatLng `json:"pickup"`
 	Drop        LatLng `json:"drop"`
 	RequestedAt string `json:"requested_at"`
+	RetryCount  int    `json:"retry_count,omitempty"`
 }
 
 // DriverAssignedEvent is published to driver.assigned.
