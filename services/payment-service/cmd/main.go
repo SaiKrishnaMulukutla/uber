@@ -52,11 +52,6 @@ func main() {
 	switch cfg.PaymentProvider {
 	case "razorpay":
 		rzp := rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.TLSSkipVerify)
-		// Register webhook on startup (non-fatal if it fails)
-		webhookURL := cfg.BaseURL + "/payments/webhook"
-		if err := rzp.RegisterWebhook(ctx, webhookURL); err != nil {
-			log.Printf("[payments] webhook registration failed (non-fatal): %v", err)
-		}
 		prov = rzp
 		log.Println("[payments] using Razorpay payment provider")
 	default:
