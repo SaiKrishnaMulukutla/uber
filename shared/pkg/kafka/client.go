@@ -85,6 +85,14 @@ func (c *Client) Close() {
 	})
 }
 
+// WarmWriters pre-creates writers for the given topics so the first Publish
+// call does not pay the TLS/SASL connection cost under a request timeout.
+func (c *Client) WarmWriters(topics ...string) {
+	for _, t := range topics {
+		c.getWriter(t)
+	}
+}
+
 // EnsureTopics creates topics if they don't already exist (with retry).
 func (c *Client) EnsureTopics(ctx context.Context, topics ...string) error {
 	for attempt := 1; attempt <= 20; attempt++ {
@@ -120,7 +128,7 @@ func (c *Client) Publish(ctx context.Context, topic, key string, value any) erro
 	if err != nil {
 		return err
 	}
-	writeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return c.getWriter(topic).WriteMessages(writeCtx, kafkago.Message{
 		Key:   []byte(key),

@@ -46,6 +46,7 @@ func main() {
 	); err != nil {
 		log.Fatal(err)
 	}
+	kafkaClient.WarmWriters(kafka.TopicPaymentCompleted)
 
 	// Select payment provider based on config
 	var prov provider.PaymentProvider
