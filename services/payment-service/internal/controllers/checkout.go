@@ -166,7 +166,7 @@ body{background:#f5f5f5;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
       <div style="font-size:13px;color:#555;margin-bottom:20px;line-height:1.6">
         Securely pay via Razorpay. Your card details are never stored on our servers.
         <br/><br/>
-        <strong>Test card:</strong> 4111 1111 1111 1111 &nbsp;&middot;&nbsp; Any future expiry &nbsp;&middot;&nbsp; Any CVV
+        <strong>Test card:</strong> 4100 2800 0000 1007 &nbsp;&middot;&nbsp; Any future expiry &nbsp;&middot;&nbsp; Any CVV
       </div>
       <button class="btn" id="btn-card" onclick="payCard()">Pay &#8377;%.2f with Card</button>
     </div>

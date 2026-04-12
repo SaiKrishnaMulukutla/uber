@@ -173,8 +173,8 @@ func (s *paymentService) ConfirmCash(ctx context.Context, paymentID, driverID st
 	if p.DriverID != driverID {
 		return nil, fmt.Errorf("not your payment")
 	}
-	if p.Status != model.StatusAwaitingCashConfirm {
-		return nil, fmt.Errorf("payment is in status %s; expected AWAITING_CASH_CONFIRM", p.Status)
+	if p.Status != model.StatusAwaitingCashConfirm && p.Status != model.StatusPending {
+		return nil, fmt.Errorf("payment is in status %s; expected PENDING or AWAITING_CASH_CONFIRM", p.Status)
 	}
 	now := time.Now()
 	if err := s.repo.MarkCompleted(ctx, p.ID, "cash", "", now); err != nil {
