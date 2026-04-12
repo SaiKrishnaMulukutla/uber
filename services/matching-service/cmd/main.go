@@ -59,8 +59,6 @@ func main() {
 			case <-time.After(10 * time.Second):
 			}
 		}
-		defer redisClient.Close()
-
 		kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 		if err := kafkaClient.EnsureTopics(ctx,
 			kafka.TopicRideRequested,
@@ -77,6 +75,9 @@ func main() {
 		kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "matching-group", func(data []byte) error {
 			return matcher.HandleRideRequested(ctx, data)
 		})
+		// Keep Redis open until shutdown — Subscribe runs in its own goroutine.
+		<-ctx.Done()
+		redisClient.Close()
 	}()
 
 	quit := make(chan os.Signal, 1)
