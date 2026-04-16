@@ -23,6 +23,7 @@ type mockGeo struct {
 	GetOfferFn          func(ctx context.Context, tripID string) (string, error)
 	DeleteOfferFn       func(ctx context.Context, tripID string) error
 	SetOfferEventFn     func(ctx context.Context, tripID string, data []byte, ttl time.Duration) error
+	GetDriverTypeFn     func(ctx context.Context, driverID string) string
 }
 
 func (m *mockGeo) GetNearbyDrivers(ctx context.Context, lat, lng, radiusKm float64, count int) ([]string, error) {
@@ -90,6 +91,12 @@ func (m *mockGeo) SetOfferEvent(ctx context.Context, tripID string, data []byte,
 		return m.SetOfferEventFn(ctx, tripID, data, ttl)
 	}
 	return nil
+}
+func (m *mockGeo) GetDriverType(ctx context.Context, driverID string) string {
+	if m.GetDriverTypeFn != nil {
+		return m.GetDriverTypeFn(ctx, driverID)
+	}
+	return ""
 }
 
 type mockPublisher struct {
