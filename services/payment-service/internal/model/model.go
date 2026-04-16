@@ -54,3 +54,18 @@ type PaymentHistoryResponse struct {
 	Limit    int        `json:"limit"`
 	Offset   int        `json:"offset"`
 }
+
+// DailyEarning aggregates a driver's completed earnings for one calendar day.
+type DailyEarning struct {
+	Date   string  `json:"date"`   // YYYY-MM-DD
+	Amount float64 `json:"amount"`
+	Trips  int     `json:"trips"`
+}
+
+// EarningsResponse is returned by GET /payments/earnings.
+type EarningsResponse struct {
+	Period        string         `json:"period"`
+	TotalEarnings float64        `json:"total_earnings"`
+	TripCount     int            `json:"trip_count"`
+	Daily         []DailyEarning `json:"daily"`
+}
