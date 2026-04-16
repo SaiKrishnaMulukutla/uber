@@ -48,6 +48,7 @@ func main() {
 	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 	if err := kafkaClient.EnsureTopics(ctx,
 		kafka.TopicRideRequested,
+		kafka.TopicRideOffered,
 		kafka.TopicDriverAssigned,
 		kafka.TopicTripCompleted,
 		kafka.TopicTripCancelled,
@@ -66,7 +67,7 @@ func main() {
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)
-	svc := service.New(repo, redisClient, otpClient, m)
+	svc := service.New(repo, redisClient, otpClient, m, kafkaClient)
 
 	// Kafka consumers
 	kafkaClient.Subscribe(ctx, kafka.TopicDriverAssigned, "driver-status-assigned", func(data []byte) error {

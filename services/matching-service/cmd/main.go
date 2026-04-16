@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -62,6 +63,7 @@ func main() {
 		kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 		if err := kafkaClient.EnsureTopics(ctx,
 			kafka.TopicRideRequested,
+			kafka.TopicRideOffered,
 			kafka.TopicDriverAssigned,
 			kafka.TopicTripCompleted,
 			kafka.TopicTripCancelled,
@@ -75,7 +77,27 @@ func main() {
 		kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "matching-group", func(data []byte) error {
 			return matcher.HandleRideRequested(ctx, data)
 		})
-		// Keep Redis open until shutdown — Subscribe runs in its own goroutine.
+
+		// Clean up pending offers when a trip is cancelled (e.g. rider cancels while offer is pending).
+		kafkaClient.Subscribe(ctx, kafka.TopicTripCancelled, "matching-cancel-cleanup", func(data []byte) error {
+			var ev kafka.TripCancelledEvent
+			if err := json.Unmarshal(data, &ev); err != nil {
+				return err
+			}
+			driverID, err := redisClient.GetOffer(ctx, ev.TripID)
+			if err != nil {
+				return nil // no pending offer, nothing to do
+			}
+			log.Printf("[matching] trip.cancelled: cleaning up offer trip=%s driver=%s", ev.TripID, driverID)
+			_ = redisClient.DeleteOffer(ctx, ev.TripID)
+			_ = redisClient.UnlockDriver(ctx, driverID)
+			if lat, lng, locErr := redisClient.GetDriverLocation(ctx, driverID); locErr == nil {
+				_ = redisClient.SetDriverLocation(ctx, driverID, lat, lng)
+			}
+			return nil
+		})
+
+		// Keep Redis open until shutdown — Subscribe runs in its own goroutines.
 		<-ctx.Done()
 		redisClient.Close()
 	}()
