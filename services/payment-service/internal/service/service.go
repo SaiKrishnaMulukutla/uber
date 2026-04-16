@@ -30,6 +30,7 @@ type PaymentService interface {
 	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
+	GetEarnings(ctx context.Context, driverID, period string) (*model.EarningsResponse, error)
 }
 
 type paymentService struct {
@@ -227,6 +228,30 @@ func (s *paymentService) ListByUser(ctx context.Context, userID string, limit, o
 		return nil, err
 	}
 	return &model.PaymentHistoryResponse{Payments: payments, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+func (s *paymentService) GetEarnings(ctx context.Context, driverID, period string) (*model.EarningsResponse, error) {
+	now := time.Now().UTC()
+	var from time.Time
+	switch period {
+	case "week":
+		from = now.AddDate(0, 0, -7)
+	case "month":
+		from = now.AddDate(0, -1, 0)
+	default:
+		from = time.Time{} // all time
+		period = "all"
+	}
+	daily, total, trips, err := s.repo.GetDriverEarnings(ctx, driverID, from, now.AddDate(0, 0, 1))
+	if err != nil {
+		return nil, fmt.Errorf("get driver earnings: %w", err)
+	}
+	return &model.EarningsResponse{
+		Period:        period,
+		TotalEarnings: total,
+		TripCount:     trips,
+		Daily:         daily,
+	}, nil
 }
 
 func (s *paymentService) publishCompleted(ctx context.Context, p *model.Payment) {

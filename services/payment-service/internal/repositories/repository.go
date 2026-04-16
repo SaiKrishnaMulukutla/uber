@@ -20,6 +20,7 @@ type PaymentRepository interface {
 	FindByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) ([]*model.Payment, int, error)
+	GetDriverEarnings(ctx context.Context, driverID string, from, to time.Time) ([]model.DailyEarning, float64, int, error)
 }
 
 type pgPaymentRepository struct {
@@ -118,6 +119,48 @@ func (r *pgPaymentRepository) FindByTripID(ctx context.Context, tripID string) (
 func (r *pgPaymentRepository) FindByProviderOrderID(ctx context.Context, providerOrderID string) (*model.Payment, error) {
 	const q = `SELECT ` + selectCols + ` FROM payments WHERE provider_order_id = $1`
 	return scanPayment(r.db.QueryRow(ctx, q, providerOrderID))
+}
+
+// GetDriverEarnings returns per-day earnings for a driver within [from, to].
+// Returns daily breakdown, total amount, and total trip count.
+func (r *pgPaymentRepository) GetDriverEarnings(ctx context.Context, driverID string, from, to time.Time) ([]model.DailyEarning, float64, int, error) {
+	const q = `
+		SELECT
+			TO_CHAR(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+			SUM(amount)::float,
+			COUNT(*)::int
+		FROM payments
+		WHERE driver_id = $1
+		  AND status    = 'COMPLETED'
+		  AND completed_at >= $2
+		  AND completed_at <  $3
+		GROUP BY day
+		ORDER BY day DESC`
+
+	rows, err := r.db.Query(ctx, q, driverID, from, to)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer rows.Close()
+
+	var (
+		daily      []model.DailyEarning
+		totalAmt   float64
+		totalTrips int
+	)
+	for rows.Next() {
+		var d model.DailyEarning
+		if err := rows.Scan(&d.Date, &d.Amount, &d.Trips); err != nil {
+			return nil, 0, 0, err
+		}
+		daily = append(daily, d)
+		totalAmt += d.Amount
+		totalTrips += d.Trips
+	}
+	if daily == nil {
+		daily = []model.DailyEarning{}
+	}
+	return daily, totalAmt, totalTrips, rows.Err()
 }
 
 // ListByUser returns paginated payments for a rider or driver.
