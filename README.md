@@ -97,7 +97,12 @@ flowchart TD
 ```
 POST /trips/request
     └─► ride.requested ──► matching-service (Redis GEO nearest driver)
-                               └─► driver.assigned ──► trip-service, driver-service, notification-service
+                               └─► ride.offered ──► notification-service (push to driver)
+                                       │
+                               driver: POST /drivers/trips/{id}/respond {"accept": true}
+                                       │
+                               driver-service publishes driver.assigned
+                                       └─► trip-service, driver-service, notification-service
 
 PATCH /trips/:id/end
     └─► trip.completed ──► payment-service, driver-service, notification-service (+ email to rider)
@@ -132,8 +137,9 @@ payment completed
 
 | Topic | Publisher | Consumers |
 |-------|-----------|-----------|
-| `ride.requested` | trip-service, matching-service (retry) | matching-service |
-| `driver.assigned` | matching-service | trip-service, driver-service, notification-service |
+| `ride.requested` | trip-service, matching-service (retry), driver-service (reject) | matching-service |
+| `ride.offered` | matching-service | notification-service |
+| `driver.assigned` | driver-service (accept) | trip-service, driver-service, notification-service |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
 | `trip.cancelled` | trip-service (manual + auto-cancel poller) | driver-service, notification-service |
 | `rating.submitted` | trip-service | driver-service, user-service, notification-service |
@@ -208,6 +214,7 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location in Redis GEO |
 | PATCH | `/drivers/{id}/status` | Bearer (driver) | Set `available` / `offline` |
 | GET | `/drivers/nearby` | Bearer | Find available drivers within radius |
+| POST | `/drivers/trips/{tripId}/respond` | Bearer (driver) | Accept or reject a pending ride offer (15s window) |
 
 ### Trips — `/trips`
 
@@ -301,8 +308,12 @@ TRIP=$(curl -s -X POST $BASE/trips/request \
   -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"upi"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
-# 5. Wait for automatic matching (~3 s via Kafka)
-sleep 3
+# 5. Driver accepts the ride offer (within 15s window)
+curl -s -X POST $BASE/drivers/trips/$TRIP_ID/respond \
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"accept":true}' | jq .
+
 curl -s $BASE/trips/$TRIP_ID \
   -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,driver_id}'
 # → status should be DRIVER_ASSIGNED
