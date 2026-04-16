@@ -39,7 +39,9 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 - **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
 - **Event-driven consistency** — 6 Kafka topics decouple all services; no cross-service foreign keys
 - **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
-- **Surge pricing** — fare multiplier computed server-side, capped at 5×
+- **Vehicle categories** — `go` (hatchback), `x` (sedan, default), `xl` (SUV) with per-category base fare and per-km rate
+- **Surge pricing** — fare multiplier computed server-side, capped at 5×; admin-controlled via `GET/PATCH /trips/surge`
+- **Driver earnings dashboard** — `GET /payments/earnings?period=week|month|all` with daily breakdown
 - **Idempotent webhook handling** — duplicate Razorpay events are no-ops
 
 ---
@@ -220,17 +222,19 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/trips/estimate` | Bearer (rider) | Fare + duration estimate (no side effects) |
-| POST | `/trips/request` | Bearer (rider) | Request a ride; triggers Kafka matching |
+| POST | `/trips/estimate` | Bearer (rider) | Fare + duration estimate; accepts optional `vehicle_type` |
+| POST | `/trips/request` | Bearer (rider) | Request a ride; accepts optional `vehicle_type` (go/x/xl) |
 | GET | `/trips/history` | Bearer | Paginated trip history |
 | GET | `/trips/{id}` | Bearer | Trip details (participants only) |
 | PATCH | `/trips/{id}/assign` | `X-Internal-Secret` | Internal — matching-service only |
 | PATCH | `/trips/{id}/start` | Bearer (driver) | Start trip |
-| PATCH | `/trips/{id}/end` | Bearer (driver) | End trip; computes fare |
+| PATCH | `/trips/{id}/end` | Bearer (driver) | End trip; computes fare by vehicle category |
 | PATCH | `/trips/{id}/cancel` | Bearer | Cancel trip; restores driver to GEO pool |
 | POST | `/trips/{id}/rate` | Bearer | Rate counterpart (1–5 stars) |
 | POST | `/trips/{id}/location` | Bearer (driver) | Push live GPS coordinate |
 | WS | `/ws/trips/{id}?token=<jwt>` | JWT query param | Real-time driver location stream |
+| GET | `/trips/surge` | Bearer (admin) | Get current surge multiplier |
+| PATCH | `/trips/surge` | Bearer (admin) | Set surge multiplier (1.0 – 5.0) |
 
 ### Notifications — `/notifications`
 
@@ -253,6 +257,7 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | POST | `/payments/verify` | Checkout token | Submit Razorpay signature → completes payment |
 | POST | `/payments/webhook` | HMAC | Razorpay async backup confirmation |
 | POST | `/payments/simulate-success` | Bearer | Complete payment instantly (dev / test only) |
+| GET | `/payments/earnings` | Bearer (driver) | Earnings summary — `?period=week\|month\|all` with daily breakdown |
 
 ---
 
@@ -271,7 +276,7 @@ RIDER_TOKEN=<access_token from above>
 # Register driver
 curl -s -X POST $BASE/drivers/register \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"sedan","license_plate":"KA-01-AB-1234"}'
+  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"x","license_plate":"KA-01-AB-1234"}'
 DRIVER_TOKEN=<access_token from above>
 DRIVER_ID=<driver.id from above>
 
@@ -501,8 +506,14 @@ All paths publish `payment.completed` → email + in-app notification to rider.
 ### Fare Formula
 
 ```
-₹50 base  +  ₹12 × distance_km  ×  surge_multiplier  (capped at 5×)
+fare = base + per_km × distance_km × surge_multiplier   (surge capped at 5×)
 ```
+
+| Category | Base | Per km | Typical vehicle |
+|----------|------|--------|----------------|
+| `go` | ₹30 | ₹8/km | hatchback / compact |
+| `x` | ₹50 | ₹12/km | sedan (default) |
+| `xl` | ₹80 | ₹16/km | SUV / MUV |
 
 Driver-supplied distance is accepted only if within `1.5×` the straight-line (haversine) distance and under 200 km — otherwise the haversine value is used.
 
