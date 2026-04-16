@@ -24,9 +24,11 @@ type TripServicer interface {
 	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
+	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse
 	Rate(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
 	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
+	GetSurge(ctx context.Context) float64
+	SetSurge(ctx context.Context, multiplier float64) error
 }
 
 // LocationBroadcaster pushes driver coordinates to all WebSocket subscribers of a trip.
@@ -55,6 +57,13 @@ func (h *Handler) Routes() chi.Router {
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireInternalSecret)
 		r.Patch("/{id}/assign", h.Assign)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(jwt.RequireAuth)
+		r.Use(jwt.RequireRole("admin"))
+		r.Get("/surge", h.GetSurge)
+		r.Patch("/surge", h.SetSurge)
 	})
 
 	r.Group(func(r chi.Router) {
@@ -106,7 +115,7 @@ func (h *Handler) Estimate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
 		return
 	}
-	resp := h.svc.Estimate(r.Context(), req.PickupLat, req.PickupLng, req.DropLat, req.DropLng)
+	resp := h.svc.Estimate(r.Context(), req.PickupLat, req.PickupLng, req.DropLat, req.DropLng, req.VehicleType)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -312,6 +321,33 @@ func parsePagination(r *http.Request) (limit, offset int) {
 		offset = 10000
 	}
 	return
+}
+
+func (h *Handler) GetSurge(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]float64{"multiplier": h.svc.GetSurge(r.Context())})
+}
+
+func (h *Handler) SetSurge(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Multiplier float64 `json:"multiplier"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	const (
+		minSurge = 1.0
+		maxSurge = 5.0
+	)
+	if req.Multiplier < minSurge || req.Multiplier > maxSurge {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "multiplier must be between 1.0 and 5.0"})
+		return
+	}
+	if err := h.svc.SetSurge(r.Context(), req.Multiplier); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]float64{"multiplier": req.Multiplier})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

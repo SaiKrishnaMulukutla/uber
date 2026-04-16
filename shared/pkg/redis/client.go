@@ -138,6 +138,18 @@ func (c *Client) GetDriverGeoPos(ctx context.Context, driverID string) (float64,
 	return positions[0].Latitude, positions[0].Longitude, nil
 }
 
+// SetDriverType caches a driver's vehicle category (go | x | xl) in Redis.
+// Used by matching-service to filter candidates without a DB lookup.
+func (c *Client) SetDriverType(ctx context.Context, driverID, category string) error {
+	return c.rdb.Set(ctx, "driver:type:"+driverID, category, 0).Err()
+}
+
+// GetDriverType retrieves a driver's vehicle category. Returns "" on miss.
+func (c *Client) GetDriverType(ctx context.Context, driverID string) string {
+	v, _ := c.rdb.Get(ctx, "driver:type:"+driverID).Result()
+	return v
+}
+
 // SetOffer stores the chosen driverID as the pending offer for tripID with a TTL.
 func (c *Client) SetOffer(ctx context.Context, tripID, driverID string, ttl time.Duration) error {
 	return c.rdb.Set(ctx, "offer:"+tripID, driverID, ttl).Err()
@@ -166,7 +178,6 @@ func (c *Client) GetOfferEvent(ctx context.Context, tripID string) ([]byte, erro
 
 // GetSurge returns the surge multiplier from the key "surge:multiplier".
 // Falls back to 1.0 if the key is absent or unparseable.
-// Set via: redis-cli SET surge:multiplier 1.5
 func (c *Client) GetSurge(ctx context.Context) float64 {
 	val, err := c.rdb.Get(ctx, "surge:multiplier").Result()
 	if err != nil {
@@ -181,6 +192,12 @@ func (c *Client) GetSurge(ctx context.Context) float64 {
 		return maxSurge
 	}
 	return f
+}
+
+// SetSurge persists a new surge multiplier to the key "surge:multiplier".
+// The value is stored without a TTL so it survives restarts.
+func (c *Client) SetSurge(ctx context.Context, multiplier float64) error {
+	return c.rdb.Set(ctx, "surge:multiplier", strconv.FormatFloat(multiplier, 'f', 2, 64), 0).Err()
 }
 
 // Ping checks the Redis connection.

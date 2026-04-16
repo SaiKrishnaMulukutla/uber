@@ -27,7 +27,7 @@ type mockTripService struct {
 	CancelFn       func(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRiderFn  func(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriverFn func(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	EstimateFn      func(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
+	EstimateFn      func(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse
 	RateFn          func(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
 	PushLocationFn  func(ctx context.Context, tripID, driverID string, lat, lng float64) error
 }
@@ -56,8 +56,8 @@ func (m *mockTripService) ListByRider(ctx context.Context, riderID string, limit
 func (m *mockTripService) ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error) {
 	return m.ListByDriverFn(ctx, driverID, limit, offset)
 }
-func (m *mockTripService) Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
-	return m.EstimateFn(ctx, pickupLat, pickupLng, dropLat, dropLng)
+func (m *mockTripService) Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse {
+	return m.EstimateFn(ctx, pickupLat, pickupLng, dropLat, dropLng, vehicleType)
 }
 func (m *mockTripService) Rate(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error) {
 	return m.RateFn(ctx, tripID, raterID, raterRole, req)
@@ -68,6 +68,8 @@ func (m *mockTripService) PushLocation(ctx context.Context, tripID, driverID str
 	}
 	return nil
 }
+func (m *mockTripService) GetSurge(_ context.Context) float64        { return 1.0 }
+func (m *mockTripService) SetSurge(_ context.Context, _ float64) error { return nil }
 
 type noopHub struct{}
 
@@ -215,7 +217,7 @@ func TestHistory_PaginationDefaults(t *testing.T) {
 
 func TestEstimate_Success(t *testing.T) {
 	mock := &mockTripService{
-		EstimateFn: func(_ context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
+		EstimateFn: func(_ context.Context, pickupLat, pickupLng, dropLat, dropLng float64, _ string) *model.EstimateResponse {
 			return &model.EstimateResponse{
 				EstimatedFare: 110.0, EstimatedDistance: 5.0,
 				EstimatedDuration: 12.0, SurgeMultiplier: 1.0, Currency: "INR",
@@ -245,7 +247,7 @@ func TestEstimate_Success(t *testing.T) {
 
 func TestEstimate_RequiresRiderRole(t *testing.T) {
 	mock := &mockTripService{
-		EstimateFn: func(_ context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
+		EstimateFn: func(_ context.Context, pickupLat, pickupLng, dropLat, dropLng float64, _ string) *model.EstimateResponse {
 			return &model.EstimateResponse{}
 		},
 	}

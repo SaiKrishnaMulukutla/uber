@@ -2,7 +2,6 @@ package model
 
 import "time"
 
-// Trip lifecycle statuses.
 const (
 	StatusRequested      = "REQUESTED"
 	StatusDriverAssigned = "DRIVER_ASSIGNED"
@@ -11,7 +10,12 @@ const (
 	StatusCancelled      = "CANCELLED"
 )
 
-// Trip represents a ride in the system.
+const (
+	VehicleGo = "go" // hatchbacks / compacts  — ₹30 base + ₹8/km
+	VehicleX  = "x"  // sedans (default)        — ₹50 base + ₹12/km
+	VehicleXL = "xl" // SUVs / MUVs             — ₹80 base + ₹16/km
+)
+
 type Trip struct {
 	ID              string     `json:"id"`
 	RiderID         string     `json:"rider_id"`
@@ -24,6 +28,7 @@ type Trip struct {
 	DropLng         float64    `json:"drop_lng"`
 	Fare            *float64   `json:"fare,omitempty"`
 	Status          string     `json:"status"`
+	VehicleType     string     `json:"vehicle_type"`
 	PaymentMethod   string     `json:"payment_method,omitempty"`
 	RequestedAt     *time.Time `json:"requested_at,omitempty"`
 	StartedAt       *time.Time `json:"started_at,omitempty"`
@@ -32,7 +37,6 @@ type Trip struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
-// Rating represents a trip rating.
 type Rating struct {
 	ID        string    `json:"id"`
 	TripID    string    `json:"trip_id"`
@@ -50,7 +54,8 @@ type TripRequest struct {
 	PickupLng     float64 `json:"pickupLng"`
 	DropLat       float64 `json:"dropLat"`
 	DropLng       float64 `json:"dropLng"`
-	PaymentMethod string  `json:"payment_method,omitempty"` // cash | card | wallet (default: cash)
+	PaymentMethod string  `json:"payment_method,omitempty"` // cash | card | upi (default: cash)
+	VehicleType   string  `json:"vehicle_type,omitempty"`   // go | x | xl  (default: x)
 }
 
 type AssignRequest struct {
@@ -74,10 +79,11 @@ type HistoryResponse struct {
 }
 
 type EstimateRequest struct {
-	PickupLat float64 `json:"pickupLat"`
-	PickupLng float64 `json:"pickupLng"`
-	DropLat   float64 `json:"dropLat"`
-	DropLng   float64 `json:"dropLng"`
+	PickupLat   float64 `json:"pickupLat"`
+	PickupLng   float64 `json:"pickupLng"`
+	DropLat     float64 `json:"dropLat"`
+	DropLng     float64 `json:"dropLng"`
+	VehicleType string  `json:"vehicle_type,omitempty"`
 }
 
 type EstimateResponse struct {
