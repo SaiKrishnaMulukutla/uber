@@ -13,6 +13,7 @@ type RideRequestedEvent struct {
 	Pickup        LatLng   `json:"pickup"`
 	Drop          LatLng   `json:"drop"`
 	RequestedAt   string   `json:"requested_at"`
+	VehicleType   string   `json:"vehicle_type,omitempty"` // go | x | xl
 	RetryCount    int      `json:"retry_count,omitempty"`
 	SkipDriverIDs []string `json:"skip_driver_ids,omitempty"`
 }
@@ -25,6 +26,7 @@ type RideOfferedEvent struct {
 	RiderID        string `json:"rider_id"`
 	Pickup         LatLng `json:"pickup"`
 	Drop           LatLng `json:"drop"`
+	VehicleType    string `json:"vehicle_type,omitempty"`
 	OfferExpiresAt string `json:"offer_expires_at"`
 }
 
