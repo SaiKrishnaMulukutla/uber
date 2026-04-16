@@ -9,6 +9,8 @@
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat" />
 </p>
 
+> **Live demo:** `https://api-gateway-ov0j.onrender.com` (Singapore · Render free tier — first request may take ~30 s to cold-start)
+
 A production-style ride-hailing backend built with Go microservices, event-driven architecture (Kafka), geospatial driver matching (Redis GEO), PostgreSQL, and an NGINX API gateway — all orchestrated via Docker Compose.
 
 ---
@@ -117,7 +119,7 @@ payment completed
 | user-service | 8081 | users_db |
 | driver-service | 8082 | drivers_db |
 | trip-service | 8083 | trips_db |
-| matching-service | 8087 | — |
+| matching-service | — (no HTTP) | — |
 | notification-service | 8084 | notifications_db |
 | payment-service | 8085 | payments_db |
 | PostgreSQL | 5433 | — |
@@ -252,42 +254,60 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 ```bash
 BASE=http://localhost:8000
 
-# 1. Register rider and driver
-RIDER=$(curl -s -X POST $BASE/users/register \
+# 1. Register rider
+curl -s -X POST $BASE/users/register \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test Rider","email":"rider@test.com","phone":"+911111111111","password":"Pass123!"}')
-RIDER_TOKEN=$(echo $RIDER | jq -r '.access_token')
+  -d '{"name":"Test Rider","email":"rider@test.com","phone":"+911111111111","password":"Pass123!"}'
+# → returns access_token directly on register (no OTP needed for registration)
+RIDER_TOKEN=<access_token from above>
 
-DRIVER=$(curl -s -X POST $BASE/drivers/register \
+# Register driver
+curl -s -X POST $BASE/drivers/register \
   -H "Content-Type: application/json" \
-  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"sedan","license_plate":"KA-01-AB-1234"}')
-DRIVER_TOKEN=$(echo $DRIVER | jq -r '.access_token')
-DRIVER_ID=$(echo $DRIVER | jq -r '.driver.id')
+  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"sedan","license_plate":"KA-01-AB-1234"}'
+DRIVER_TOKEN=<access_token from above>
+DRIVER_ID=<driver.id from above>
 
-# 2. Driver goes online and sets location
+# 2. Login flow (OTP-based — 2 steps; required after registration expires)
+# Step 1 — sends OTP to email
+curl -s -X POST $BASE/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"rider@test.com","password":"Pass123!"}'
+# → { "message": "OTP sent to rider@test.com" }
+
+# Step 2 — verify OTP (check email for 6-digit code)
+curl -s -X POST $BASE/users/verify-login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"rider@test.com","otp":"123456"}'
+# → { "access_token": "...", "refresh_token": "...", "user": { ... } }
+
+# Same 2-step flow for drivers: POST /drivers/login → POST /drivers/verify-login
+
+# 3. Driver goes online and sets location
 curl -s -X PATCH $BASE/drivers/$DRIVER_ID/status \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"status":"available"}' | jq .status
+  -d '{"status":"available"}'
 
 curl -s -X PATCH $BASE/drivers/$DRIVER_ID/location \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"lat":12.9716,"lng":77.5946}' | jq .
+  -d '{"lat":12.9716,"lng":77.5946}'
 
-# 3. Rider requests a trip (matching happens via Kafka)
+# 4. Rider requests a trip (Kafka matching triggers automatically)
 TRIP=$(curl -s -X POST $BASE/trips/request \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"upi"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
-# 4. Wait for automatic matching (~3 s)
+# 5. Wait for automatic matching (~3 s via Kafka)
 sleep 3
 curl -s $BASE/trips/$TRIP_ID \
   -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,driver_id}'
+# → status should be DRIVER_ASSIGNED
 
-# 5. Driver starts and ends the trip
+# 6. Driver starts and ends the trip
 curl -s -X PATCH $BASE/trips/$TRIP_ID/start \
   -H "Authorization: Bearer $DRIVER_TOKEN" | jq .status
 
@@ -295,7 +315,7 @@ curl -s -X PATCH $BASE/trips/$TRIP_ID/end \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
   -H "Content-Type: application/json" -d '{}' | jq '{status,fare}'
 
-# 6. Open checkout page (UPI QR auto-displayed; for cash tab — wait for driver to confirm)
+# 7. Open checkout page in browser
 PAYMENT=$(curl -s $BASE/payments/$TRIP_ID -H "Authorization: Bearer $RIDER_TOKEN")
 PAYMENT_ID=$(echo $PAYMENT | jq -r '.id')
 CHECKOUT_URL=$(curl -s -X POST $BASE/payments/orders \
@@ -303,12 +323,20 @@ CHECKOUT_URL=$(curl -s -X POST $BASE/payments/orders \
   -H "Content-Type: application/json" \
   -d "{\"payment_id\":\"$PAYMENT_ID\"}" | jq -r '.checkout_url')
 echo "Open in browser: $CHECKOUT_URL"
+# UPI tab: enter  success@razorpay  as the VPA
+# Card tab: use   4100 2800 0000 1007  (any expiry, any CVV)
 
 # For cash trips — driver confirms after collecting cash:
 # curl -s -X POST $BASE/payments/$PAYMENT_ID/confirm-cash \
 #   -H "Authorization: Bearer $DRIVER_TOKEN"
 
-# 7. Rate, check notifications and payment
+# Dev shortcut — skip Razorpay entirely:
+# curl -s -X POST $BASE/payments/simulate-success \
+#   -H "Authorization: Bearer $RIDER_TOKEN" \
+#   -H "Content-Type: application/json" \
+#   -d "{\"payment_id\":\"$PAYMENT_ID\"}"
+
+# 8. Rate, check notifications and payment
 curl -s -X POST $BASE/trips/$TRIP_ID/rate \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
@@ -316,7 +344,7 @@ curl -s -X POST $BASE/trips/$TRIP_ID/rate \
 
 sleep 2
 curl -s $BASE/notifications/ \
-  -H "Authorization: Bearer $RIDER_TOKEN" | jq '[.notifications[].title]'
+  -H "Authorization: Bearer $RIDER_TOKEN" | jq '[.notifications[].message]'
 
 curl -s $BASE/payments/$TRIP_ID \
   -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,amount}'
@@ -444,7 +472,7 @@ REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
     │               │                              └─ payment created, rating unlocked
     │               └── /cancel ──► CANCELLED
     │                              └─ driver restored to GEO pool
-    └── auto-cancel after 5 min (no driver found) ──► CANCELLED
+    └── auto-cancel after 10 min (no driver found) ──► CANCELLED
                     └─ trip-service poller + matching-service retries (up to 5× every 15s)
 ```
 
