@@ -11,12 +11,11 @@ import (
 	"github.com/google/uuid"
 
 	"uber/shared/pkg/kafka"
+	rredis "uber/shared/pkg/redis"
 	"uber/trip-service/internal/model"
 	"uber/trip-service/internal/repositories"
-	rredis "uber/shared/pkg/redis"
 )
 
-// TripService defines trip business operations.
 type TripService interface {
 	Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
@@ -26,9 +25,11 @@ type TripService interface {
 	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse
+	Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse
 	Rate(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
 	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
+	GetSurge(ctx context.Context) float64
+	SetSurge(ctx context.Context, multiplier float64) error
 }
 
 type tripService struct {
@@ -37,13 +38,11 @@ type tripService struct {
 	redis *rredis.Client
 }
 
-// New returns a TripService backed by the given dependencies.
 func New(repo repositories.TripRepository, k *kafka.Client, r *rredis.Client) TripService {
 	return &tripService{repo: repo, kafka: k, redis: r}
 }
 
 func (s *tripService) Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error) {
-	// Reject zero-distance trips (pickup == drop within ~11 m).
 	if haversineKm(req.PickupLat, req.PickupLng, req.DropLat, req.DropLng) < 0.01 {
 		return nil, errors.New("pickup and drop-off locations are too close")
 	}
@@ -54,6 +53,13 @@ func (s *tripService) Request(ctx context.Context, riderID, riderEmail, riderPho
 	pm := req.PaymentMethod
 	if pm == "" {
 		pm = "cash"
+	}
+
+	vt := req.VehicleType
+	switch vt {
+	case model.VehicleGo, model.VehicleX, model.VehicleXL:
+	default:
+		vt = model.VehicleX
 	}
 
 	t := &model.Trip{
@@ -67,6 +73,7 @@ func (s *tripService) Request(ctx context.Context, riderID, riderEmail, riderPho
 		DropLng:       req.DropLng,
 		Status:        model.StatusRequested,
 		PaymentMethod: pm,
+		VehicleType:   vt,
 		RequestedAt:   &now,
 		CreatedAt:     now,
 	}
@@ -80,6 +87,7 @@ func (s *tripService) Request(ctx context.Context, riderID, riderEmail, riderPho
 		RiderID:     riderID,
 		Pickup:      kafka.LatLng{Lat: req.PickupLat, Lng: req.PickupLng},
 		Drop:        kafka.LatLng{Lat: req.DropLat, Lng: req.DropLng},
+		VehicleType: vt,
 		RequestedAt: now.Format(time.RFC3339),
 	}
 	if err := s.kafka.Publish(ctx, kafka.TopicRideRequested, id, ev); err != nil {
@@ -134,7 +142,7 @@ func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *
 		km = *distKm
 	}
 
-	fare := calcFare(km)
+	fare := calcFare(km, trip.VehicleType)
 	now := time.Now()
 
 	var durSec int64
@@ -245,10 +253,10 @@ func (s *tripService) ListByDriver(ctx context.Context, driverID string, limit, 
 	return &model.HistoryResponse{Trips: trips, Total: total, Limit: limit, Offset: offset}, nil
 }
 
-func (s *tripService) Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64) *model.EstimateResponse {
+func (s *tripService) Estimate(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse {
 	km := haversineKm(pickupLat, pickupLng, dropLat, dropLng)
 	surge := s.redis.GetSurge(ctx)
-	fare := calcFare(km) * surge
+	fare := calcFare(km, vehicleType) * surge
 	durationMin := calcDurationMin(km)
 	return &model.EstimateResponse{
 		EstimatedFare:     math.Round(fare*100) / 100,
@@ -338,10 +346,25 @@ func haversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
-func calcFare(km float64) float64 {
-	return 50.0 + km*12.0
+func calcFare(km float64, vehicleType string) float64 {
+	switch vehicleType {
+	case model.VehicleGo:
+		return 30.0 + km*8.0
+	case model.VehicleXL:
+		return 80.0 + km*16.0
+	default: // VehicleX and anything unrecognised
+		return 50.0 + km*12.0
+	}
 }
 
 func calcDurationMin(km float64) float64 {
 	return (km / 25.0) * 60.0
+}
+
+func (s *tripService) GetSurge(ctx context.Context) float64 {
+	return s.redis.GetSurge(ctx)
+}
+
+func (s *tripService) SetSurge(ctx context.Context, multiplier float64) error {
+	return s.redis.SetSurge(ctx, multiplier)
 }

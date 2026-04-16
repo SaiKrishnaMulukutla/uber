@@ -11,7 +11,6 @@ import (
 	"uber/trip-service/internal/model"
 )
 
-// TripRepository defines persistence operations for trips.
 type TripRepository interface {
 	CreateTrip(ctx context.Context, t *model.Trip) error
 	FindByID(ctx context.Context, id string) (*model.Trip, error)
@@ -21,25 +20,21 @@ type TripRepository interface {
 	CancelTrip(ctx context.Context, tripID string, now time.Time) error
 	ListByRider(ctx context.Context, riderID string, limit, offset int) ([]*model.Trip, int, error)
 	ListByDriver(ctx context.Context, driverID string, limit, offset int) ([]*model.Trip, int, error)
-	// FindStuckTrips returns trips that have been in REQUESTED status longer than olderThan.
 	FindStuckTrips(ctx context.Context, olderThan time.Duration) ([]*model.Trip, error)
-	// CreateRating inserts a rating. Returns (rating, true, nil) when newly inserted,
-	// (rating, false, nil) when the rating already existed (idempotent on Kafka retry).
 	CreateRating(ctx context.Context, tripID, raterID, raterRole, rateeID, rateeRole string, score int, comment string) (*model.Rating, bool, error)
 }
 
 type pgTripRepository struct{ pool *pgxpool.Pool }
 
-// NewRepository returns a Postgres-backed TripRepository.
 func NewRepository(pool *pgxpool.Pool) TripRepository {
 	return &pgTripRepository{pool: pool}
 }
 
 func (r *pgTripRepository) CreateTrip(ctx context.Context, t *model.Trip) error {
 	_, err := r.pool.Exec(ctx,
-		`INSERT INTO trips (id,rider_id,rider_email,rider_phone,pickup_lat,pickup_lng,drop_lat,drop_lng,status,payment_method,requested_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-		t.ID, t.RiderID, t.RiderEmail, t.RiderPhone, t.PickupLat, t.PickupLng, t.DropLat, t.DropLng, t.Status, t.PaymentMethod, t.RequestedAt)
+		`INSERT INTO trips (id,rider_id,rider_email,rider_phone,pickup_lat,pickup_lng,drop_lat,drop_lng,status,payment_method,vehicle_type,requested_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		t.ID, t.RiderID, t.RiderEmail, t.RiderPhone, t.PickupLat, t.PickupLng, t.DropLat, t.DropLng, t.Status, t.PaymentMethod, t.VehicleType, t.RequestedAt)
 	return err
 }
 
@@ -47,11 +42,11 @@ func (r *pgTripRepository) FindByID(ctx context.Context, id string) (*model.Trip
 	var t model.Trip
 	err := r.pool.QueryRow(ctx,
 		`SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
-		        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
+		        fare,status,payment_method,vehicle_type,requested_at,started_at,completed_at,duration_seconds,created_at
 		 FROM trips WHERE id=$1`, id).
 		Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
-			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt)
+			&t.Fare, &t.Status, &t.PaymentMethod, &t.VehicleType, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt)
 	if err != nil {
 		return nil, errors.New("trip not found")
 	}
@@ -118,7 +113,7 @@ func (r *pgTripRepository) ListByRider(ctx context.Context, riderID string, limi
 		return nil, 0, err
 	}
 	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
-	        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
+	        fare,status,payment_method,vehicle_type,requested_at,started_at,completed_at,duration_seconds,created_at
 	 FROM trips WHERE rider_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, riderID, limit, offset)
 }
 
@@ -128,7 +123,7 @@ func (r *pgTripRepository) ListByDriver(ctx context.Context, driverID string, li
 		return nil, 0, err
 	}
 	return r.queryTrips(ctx, total, `SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
-	        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
+	        fare,status,payment_method,vehicle_type,requested_at,started_at,completed_at,duration_seconds,created_at
 	 FROM trips WHERE driver_id=$1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`, driverID, limit, offset)
 }
 
@@ -143,7 +138,7 @@ func (r *pgTripRepository) queryTrips(ctx context.Context, total int, query stri
 		var t model.Trip
 		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
-			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
+			&t.Fare, &t.Status, &t.PaymentMethod, &t.VehicleType, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		trips = append(trips, &t)
@@ -158,7 +153,7 @@ func (r *pgTripRepository) FindStuckTrips(ctx context.Context, olderThan time.Du
 	cutoff := time.Now().Add(-olderThan)
 	rows, err := r.pool.Query(ctx,
 		`SELECT id,rider_id,rider_email,rider_phone,driver_id,pickup_lat,pickup_lng,drop_lat,drop_lng,
-		        fare,status,payment_method,requested_at,started_at,completed_at,duration_seconds,created_at
+		        fare,status,payment_method,vehicle_type,requested_at,started_at,completed_at,duration_seconds,created_at
 		 FROM trips WHERE status=$1 AND requested_at < $2`,
 		model.StatusRequested, cutoff)
 	if err != nil {
@@ -170,7 +165,7 @@ func (r *pgTripRepository) FindStuckTrips(ctx context.Context, olderThan time.Du
 		var t model.Trip
 		if err := rows.Scan(&t.ID, &t.RiderID, &t.RiderEmail, &t.RiderPhone, &t.DriverID,
 			&t.PickupLat, &t.PickupLng, &t.DropLat, &t.DropLng,
-			&t.Fare, &t.Status, &t.PaymentMethod, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
+			&t.Fare, &t.Status, &t.PaymentMethod, &t.VehicleType, &t.RequestedAt, &t.StartedAt, &t.CompletedAt, &t.DurationSeconds, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		trips = append(trips, &t)
@@ -189,7 +184,6 @@ func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, ra
 		Scan(&rating.ID, &rating.TripID, &rating.RaterID, &rating.RaterRole,
 			&rating.RateeID, &rating.RateeRole, &rating.Score, &rating.Comment, &rating.CreatedAt)
 	if err != nil {
-		// ON CONFLICT DO NOTHING returns no rows — fetch the existing rating.
 		fetchErr := r.pool.QueryRow(ctx,
 			`SELECT id, trip_id, rater_id, rater_role, ratee_id, ratee_role, score, comment, created_at
 			 FROM ratings WHERE trip_id=$1 AND rater_id=$2`,
@@ -199,7 +193,7 @@ func (r *pgTripRepository) CreateRating(ctx context.Context, tripID, raterID, ra
 		if fetchErr != nil {
 			return nil, false, errors.New("rating creation failed")
 		}
-		return &rating, false, nil // already existed
+		return &rating, false, nil
 	}
-	return &rating, true, nil // newly inserted
+	return &rating, true, nil
 }
