@@ -28,6 +28,7 @@ type geoClient interface {
 	GetOffer(ctx context.Context, tripID string) (string, error)
 	DeleteOffer(ctx context.Context, tripID string) error
 	SetOfferEvent(ctx context.Context, tripID string, data []byte, ttl time.Duration) error
+	GetDriverType(ctx context.Context, driverID string) string
 }
 
 // eventPublisher abstracts Kafka publish needed by the matcher.
@@ -74,16 +75,21 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		return err
 	}
 
-	// Filter out drivers who already declined or timed out for this trip.
 	skipSet := make(map[string]bool, len(ev.SkipDriverIDs))
 	for _, id := range ev.SkipDriverIDs {
 		skipSet[id] = true
 	}
 	drivers := allDrivers[:0]
 	for _, d := range allDrivers {
-		if !skipSet[d] {
-			drivers = append(drivers, d)
+		if skipSet[d] {
+			continue
 		}
+		if ev.VehicleType != "" {
+			if driverType := geo.GetDriverType(ctx, d); driverType != "" && driverType != ev.VehicleType {
+				continue
+			}
+		}
+		drivers = append(drivers, d)
 	}
 
 	if len(drivers) == 0 {
@@ -158,6 +164,7 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		RiderID:        ev.RiderID,
 		Pickup:         ev.Pickup,
 		Drop:           ev.Drop,
+		VehicleType:    ev.VehicleType,
 		OfferExpiresAt: time.Now().UTC().Add(offerTTL).Format(time.RFC3339),
 	}
 

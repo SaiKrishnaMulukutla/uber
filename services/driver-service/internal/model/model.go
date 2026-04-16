@@ -6,7 +6,7 @@ const (
 	StatusAvailable    = "available"
 	StatusBusy         = "busy"
 	StatusOffline      = "offline"
-	DefaultVehicleType = "sedan"
+	DefaultVehicleType = "x"
 	DefaultRating      = 5.0
 	DefaultRatingCount = 0
 	RoleDriver         = "driver"
