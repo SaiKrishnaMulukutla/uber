@@ -72,6 +72,9 @@ func (m *mockPaymentService) SimulateSuccess(ctx context.Context, paymentID stri
 	}
 	return nil, nil
 }
+func (m *mockPaymentService) GetEarnings(_ context.Context, _, _ string) (*model.EarningsResponse, error) {
+	return &model.EarningsResponse{}, nil
+}
 
 // ---------- helpers ----------
 
