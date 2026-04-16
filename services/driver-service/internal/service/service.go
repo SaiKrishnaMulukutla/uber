@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"uber/driver-service/internal/model"
 	"uber/driver-service/internal/repositories"
 	"uber/shared/pkg/jwt"
+	"uber/shared/pkg/kafka"
 	"uber/shared/pkg/mailer"
 	rredis "uber/shared/pkg/redis"
 )
@@ -32,18 +34,20 @@ type DriverService interface {
 	UpdateLocation(ctx context.Context, driverID string, lat, lng float64) error
 	UpdateStatus(ctx context.Context, driverID, status string) (*model.Driver, error)
 	GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
+	RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error
 }
 
 type driverService struct {
 	repo   repositories.DriverRepository
 	redis  *rredis.Client
+	kafka  *kafka.Client
 	otp    OTPClient
 	mailer mailer.Mailer
 }
 
-// New returns a DriverService backed by the given repository, Redis client, OTP client, and optional mailer.
-func New(repo repositories.DriverRepository, redis *rredis.Client, otp OTPClient, m mailer.Mailer) DriverService {
-	return &driverService{repo: repo, redis: redis, otp: otp, mailer: m}
+// New returns a DriverService backed by the given repository, Redis client, OTP client, mailer, and Kafka client.
+func New(repo repositories.DriverRepository, redis *rredis.Client, otp OTPClient, m mailer.Mailer, k *kafka.Client) DriverService {
+	return &driverService{repo: repo, redis: redis, otp: otp, mailer: m, kafka: k}
 }
 
 func (s *driverService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
@@ -212,4 +216,49 @@ func (s *driverService) UpdateStatus(ctx context.Context, driverID, status strin
 // GetNearby returns driver IDs within radiusKm of the given point.
 func (s *driverService) GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error) {
 	return s.redis.GetNearbyDrivers(ctx, lat, lng, radiusKm, 10)
+}
+
+// RespondToOffer accepts or rejects a pending ride offer from the matching service.
+// On accept: publishes driver.assigned so the trip transitions to DRIVER_ASSIGNED.
+// On reject: unlocks the driver, restores them to the GEO pool, and re-queues the
+// trip so matching can try the next available driver.
+func (s *driverService) RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error {
+	stored, err := s.redis.GetOffer(ctx, tripID)
+	if err != nil || stored != driverID {
+		return errors.New("no pending offer for this trip")
+	}
+	if err := s.redis.DeleteOffer(ctx, tripID); err != nil {
+		return fmt.Errorf("failed to consume offer: %w", err)
+	}
+
+	if accept {
+		ev := kafka.DriverAssignedEvent{TripID: tripID, DriverID: driverID}
+		if err := s.kafka.Publish(ctx, kafka.TopicDriverAssigned, tripID, ev); err != nil {
+			return fmt.Errorf("failed to publish driver.assigned: %w", err)
+		}
+		return nil
+	}
+
+	// Rejected: restore driver to GEO pool and re-queue the trip.
+	_ = s.redis.UnlockDriver(ctx, driverID)
+	if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
+		_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+	}
+
+	eventData, err := s.redis.GetOfferEvent(ctx, tripID)
+	if err != nil {
+		// Non-fatal: the timeout goroutine in matching-service will re-queue after offerTTL.
+		log.Printf("[driver-service] no offer event for trip %s, matching timeout will handle re-queue: %v", tripID, err)
+		return nil
+	}
+	var origEv kafka.RideRequestedEvent
+	if err := json.Unmarshal(eventData, &origEv); err != nil {
+		log.Printf("[driver-service] could not unmarshal offer event for trip %s: %v", tripID, err)
+		return nil
+	}
+	origEv.SkipDriverIDs = append(origEv.SkipDriverIDs, driverID)
+	if err := s.kafka.Publish(ctx, kafka.TopicRideRequested, tripID, origEv); err != nil {
+		return fmt.Errorf("failed to re-queue ride.requested: %w", err)
+	}
+	return nil
 }

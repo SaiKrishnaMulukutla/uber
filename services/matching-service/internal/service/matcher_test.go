@@ -11,12 +11,18 @@ import (
 )
 
 type mockGeo struct {
-	GetNearbyFn       func(ctx context.Context, lat, lng, radiusKm float64, count int) ([]string, error)
-	RemoveFn          func(ctx context.Context, driverID string) error
-	LockDriverFn      func(ctx context.Context, driverID string, ttl time.Duration) (bool, error)
-	UnlockDriverFn    func(ctx context.Context, driverID string) error
-	GetDriverGeoPosFn func(ctx context.Context, driverID string) (float64, float64, error)
-	SaveDriverLocFn   func(ctx context.Context, driverID string, lat, lng float64) error
+	GetNearbyFn         func(ctx context.Context, lat, lng, radiusKm float64, count int) ([]string, error)
+	RemoveFn            func(ctx context.Context, driverID string) error
+	SetDriverLocationFn func(ctx context.Context, driverID string, lat, lng float64) error
+	GetDriverLocationFn func(ctx context.Context, driverID string) (float64, float64, error)
+	LockDriverFn        func(ctx context.Context, driverID string, ttl time.Duration) (bool, error)
+	UnlockDriverFn      func(ctx context.Context, driverID string) error
+	GetDriverGeoPosFn   func(ctx context.Context, driverID string) (float64, float64, error)
+	SaveDriverLocFn     func(ctx context.Context, driverID string, lat, lng float64) error
+	SetOfferFn          func(ctx context.Context, tripID, driverID string, ttl time.Duration) error
+	GetOfferFn          func(ctx context.Context, tripID string) (string, error)
+	DeleteOfferFn       func(ctx context.Context, tripID string) error
+	SetOfferEventFn     func(ctx context.Context, tripID string, data []byte, ttl time.Duration) error
 }
 
 func (m *mockGeo) GetNearbyDrivers(ctx context.Context, lat, lng, radiusKm float64, count int) ([]string, error) {
@@ -24,6 +30,18 @@ func (m *mockGeo) GetNearbyDrivers(ctx context.Context, lat, lng, radiusKm float
 }
 func (m *mockGeo) RemoveDriverLocation(ctx context.Context, driverID string) error {
 	return m.RemoveFn(ctx, driverID)
+}
+func (m *mockGeo) SetDriverLocation(ctx context.Context, driverID string, lat, lng float64) error {
+	if m.SetDriverLocationFn != nil {
+		return m.SetDriverLocationFn(ctx, driverID, lat, lng)
+	}
+	return nil
+}
+func (m *mockGeo) GetDriverLocation(ctx context.Context, driverID string) (float64, float64, error) {
+	if m.GetDriverLocationFn != nil {
+		return m.GetDriverLocationFn(ctx, driverID)
+	}
+	return 12.97, 77.59, nil
 }
 func (m *mockGeo) LockDriver(ctx context.Context, driverID string, ttl time.Duration) (bool, error) {
 	if m.LockDriverFn != nil {
@@ -49,6 +67,30 @@ func (m *mockGeo) SaveDriverLocation(ctx context.Context, driverID string, lat, 
 	}
 	return nil
 }
+func (m *mockGeo) SetOffer(ctx context.Context, tripID, driverID string, ttl time.Duration) error {
+	if m.SetOfferFn != nil {
+		return m.SetOfferFn(ctx, tripID, driverID, ttl)
+	}
+	return nil
+}
+func (m *mockGeo) GetOffer(ctx context.Context, tripID string) (string, error) {
+	if m.GetOfferFn != nil {
+		return m.GetOfferFn(ctx, tripID)
+	}
+	return "", errors.New("not found")
+}
+func (m *mockGeo) DeleteOffer(ctx context.Context, tripID string) error {
+	if m.DeleteOfferFn != nil {
+		return m.DeleteOfferFn(ctx, tripID)
+	}
+	return nil
+}
+func (m *mockGeo) SetOfferEvent(ctx context.Context, tripID string, data []byte, ttl time.Duration) error {
+	if m.SetOfferEventFn != nil {
+		return m.SetOfferEventFn(ctx, tripID, data, ttl)
+	}
+	return nil
+}
 
 type mockPublisher struct {
 	PublishFn func(ctx context.Context, topic, key string, value any) error
@@ -69,9 +111,9 @@ func rideRequestedPayload(tripID, riderID string, lat, lng float64) []byte {
 	return data
 }
 
-func TestHandleRideRequested_DriverAssigned(t *testing.T) {
+func TestHandleRideRequested_OfferSentToDriver(t *testing.T) {
 	var publishedTopic, publishedKey string
-	var publishedEvent kafka.DriverAssignedEvent
+	var publishedOffer kafka.RideOfferedEvent
 	var removedDriver string
 
 	geo := &mockGeo{
@@ -88,7 +130,7 @@ func TestHandleRideRequested_DriverAssigned(t *testing.T) {
 			publishedTopic = topic
 			publishedKey = key
 			data, _ := json.Marshal(value)
-			json.Unmarshal(data, &publishedEvent)
+			json.Unmarshal(data, &publishedOffer)
 			return nil
 		},
 	}
@@ -98,20 +140,20 @@ func TestHandleRideRequested_DriverAssigned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if publishedTopic != kafka.TopicDriverAssigned {
-		t.Errorf("expected topic %s, got %s", kafka.TopicDriverAssigned, publishedTopic)
+	if publishedTopic != kafka.TopicRideOffered {
+		t.Errorf("expected topic %s, got %s", kafka.TopicRideOffered, publishedTopic)
 	}
 	if publishedKey != "trip-1" {
 		t.Errorf("expected key trip-1, got %s", publishedKey)
 	}
-	if publishedEvent.TripID != "trip-1" {
-		t.Errorf("expected TripID trip-1, got %s", publishedEvent.TripID)
+	if publishedOffer.TripID != "trip-1" {
+		t.Errorf("expected TripID trip-1, got %s", publishedOffer.TripID)
 	}
-	if publishedEvent.DriverID != "driver-1" {
-		t.Errorf("expected DriverID driver-1, got %s", publishedEvent.DriverID)
+	if publishedOffer.DriverID != "driver-1" {
+		t.Errorf("expected DriverID driver-1, got %s", publishedOffer.DriverID)
 	}
 	if removedDriver != "driver-1" {
-		t.Errorf("expected driver-1 removed from GEO pool, got %s", removedDriver)
+		t.Errorf("expected driver-1 removed from GEO pool while pending, got %s", removedDriver)
 	}
 }
 
@@ -161,6 +203,7 @@ func TestHandleRideRequested_RedisError(t *testing.T) {
 
 func TestHandleRideRequested_KafkaPublishError(t *testing.T) {
 	var unlocked string
+	var restoredDriver string
 
 	geo := &mockGeo{
 		GetNearbyFn: func(_ context.Context, _, _, _ float64, _ int) ([]string, error) {
@@ -169,6 +212,10 @@ func TestHandleRideRequested_KafkaPublishError(t *testing.T) {
 		RemoveFn: func(_ context.Context, _ string) error { return nil },
 		UnlockDriverFn: func(_ context.Context, driverID string) error {
 			unlocked = driverID
+			return nil
+		},
+		SetDriverLocationFn: func(_ context.Context, driverID string, _, _ float64) error {
+			restoredDriver = driverID
 			return nil
 		},
 	}
@@ -185,6 +232,9 @@ func TestHandleRideRequested_KafkaPublishError(t *testing.T) {
 	}
 	if unlocked != "driver-1" {
 		t.Errorf("expected driver-1 to be unlocked on publish failure, got %q", unlocked)
+	}
+	if restoredDriver != "driver-1" {
+		t.Errorf("expected driver-1 to be restored to GEO on publish failure, got %q", restoredDriver)
 	}
 }
 
@@ -240,7 +290,7 @@ func TestHandleRideRequested_PickupCoordinatesPassedToRedis(t *testing.T) {
 }
 
 func TestHandleRideRequested_FirstDriverChosen(t *testing.T) {
-	var assignedDriver string
+	var offeredDriver string
 
 	geo := &mockGeo{
 		GetNearbyFn: func(_ context.Context, _, _, _ float64, _ int) ([]string, error) {
@@ -251,9 +301,9 @@ func TestHandleRideRequested_FirstDriverChosen(t *testing.T) {
 	pub := &mockPublisher{
 		PublishFn: func(_ context.Context, _, _ string, value any) error {
 			data, _ := json.Marshal(value)
-			var ev kafka.DriverAssignedEvent
+			var ev kafka.RideOfferedEvent
 			json.Unmarshal(data, &ev)
-			assignedDriver = ev.DriverID
+			offeredDriver = ev.DriverID
 			return nil
 		},
 	}
@@ -263,7 +313,45 @@ func TestHandleRideRequested_FirstDriverChosen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if assignedDriver != "nearest-driver" {
-		t.Errorf("expected nearest-driver to be assigned, got %s", assignedDriver)
+	if offeredDriver != "nearest-driver" {
+		t.Errorf("expected nearest-driver to receive offer, got %s", offeredDriver)
+	}
+}
+
+func TestHandleRideRequested_SkipDriverIDs(t *testing.T) {
+	var offeredDriver string
+
+	geo := &mockGeo{
+		GetNearbyFn: func(_ context.Context, _, _, _ float64, _ int) ([]string, error) {
+			return []string{"driver-A", "driver-B"}, nil
+		},
+		RemoveFn: func(_ context.Context, _ string) error { return nil },
+	}
+	pub := &mockPublisher{
+		PublishFn: func(_ context.Context, _, _ string, value any) error {
+			data, _ := json.Marshal(value)
+			var ev kafka.RideOfferedEvent
+			json.Unmarshal(data, &ev)
+			offeredDriver = ev.DriverID
+			return nil
+		},
+	}
+
+	ev := kafka.RideRequestedEvent{
+		TripID:        "trip-7",
+		RiderID:       "rider-7",
+		Pickup:        kafka.LatLng{Lat: 12.97, Lng: 77.59},
+		Drop:          kafka.LatLng{Lat: 12.98, Lng: 77.60},
+		SkipDriverIDs: []string{"driver-A"}, // already rejected
+	}
+	data, _ := json.Marshal(ev)
+
+	err := handleRideRequested(context.Background(), data, pub, geo)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if offeredDriver != "driver-B" {
+		t.Errorf("expected driver-B (since driver-A is skipped), got %s", offeredDriver)
 	}
 }

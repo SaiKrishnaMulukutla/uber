@@ -8,12 +8,24 @@ type LatLng struct {
 
 // RideRequestedEvent is published to ride.requested.
 type RideRequestedEvent struct {
-	TripID      string `json:"trip_id"`
-	RiderID     string `json:"rider_id"`
-	Pickup      LatLng `json:"pickup"`
-	Drop        LatLng `json:"drop"`
-	RequestedAt string `json:"requested_at"`
-	RetryCount  int    `json:"retry_count,omitempty"`
+	TripID        string   `json:"trip_id"`
+	RiderID       string   `json:"rider_id"`
+	Pickup        LatLng   `json:"pickup"`
+	Drop          LatLng   `json:"drop"`
+	RequestedAt   string   `json:"requested_at"`
+	RetryCount    int      `json:"retry_count,omitempty"`
+	SkipDriverIDs []string `json:"skip_driver_ids,omitempty"`
+}
+
+// RideOfferedEvent is published to ride.offered when matching selects a driver.
+// The driver must explicitly accept before being assigned.
+type RideOfferedEvent struct {
+	TripID         string `json:"trip_id"`
+	DriverID       string `json:"driver_id"`
+	RiderID        string `json:"rider_id"`
+	Pickup         LatLng `json:"pickup"`
+	Drop           LatLng `json:"drop"`
+	OfferExpiresAt string `json:"offer_expires_at"`
 }
 
 // DriverAssignedEvent is published to driver.assigned.
