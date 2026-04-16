@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(~3s Kafka matching)* \u2192 Start Trip \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
+    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 Start Trip \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -888,6 +888,72 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"drivers\": [\n    \"d5e6f7g8-0000-0000-0000-000000000000\"\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "9. Respond to Ride Offer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accept\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/drivers/trips/{{trip_id}}/respond",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "trips",
+                "{{trip_id}}",
+                "respond"
+              ]
+            },
+            "description": "Accept or reject a pending ride offer from the matching service.\n\nThe matching service sends a `ride.offered` Kafka event when a driver is selected. The driver has **15 seconds** to respond before the offer times out and the next nearest driver is tried.\n\n**accept: true** \u2014 publishes `driver.assigned`, trip transitions to DRIVER_ASSIGNED.\n\n**accept: false** \u2014 driver is unlocked, restored to the GEO pool, and the trip is re-queued skipping this driver.\n\nCall this immediately after `Request Trip` (within 15s). Requires driver JWT."
+          },
+          "response": [
+            {
+              "name": "Accepted",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": \"ok\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Offer accepted\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.json().status).to.eql(\"ok\");",
+                  "});"
+                ]
+              }
             }
           ]
         }
