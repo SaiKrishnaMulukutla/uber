@@ -88,6 +88,10 @@ func (s *driverService) Register(ctx context.Context, req model.RegisterRequest)
 		return nil, err
 	}
 
+	if err := s.redis.SetDriverType(ctx, d.ID, d.VehicleType); err != nil {
+		log.Printf("[driver-service] warn: failed to cache vehicle type for driver %s: %v", d.ID, err)
+	}
+
 	pair, err := jwt.GenerateTokenPair(d.ID, d.Email, "", model.RoleDriver)
 	if err != nil {
 		return nil, err
@@ -202,15 +206,22 @@ func (s *driverService) UpdateStatus(ctx context.Context, driverID, status strin
 	if err := s.repo.UpdateStatus(ctx, driverID, status); err != nil {
 		return nil, err
 	}
+	driver, err := s.repo.FindByID(ctx, driverID)
+	if err != nil {
+		return nil, err
+	}
 	switch status {
 	case model.StatusAvailable:
-		if lat, lng, err := s.redis.GetDriverLocation(ctx, driverID); err == nil {
+		if lat, lng, locErr := s.redis.GetDriverLocation(ctx, driverID); locErr == nil {
 			_ = s.redis.SetDriverLocation(ctx, driverID, lat, lng)
+		}
+		if cacheErr := s.redis.SetDriverType(ctx, driverID, driver.VehicleType); cacheErr != nil {
+			log.Printf("[driver-service] warn: failed to cache vehicle type for driver %s: %v", driverID, cacheErr)
 		}
 	default:
 		_ = s.redis.RemoveDriverLocation(ctx, driverID)
 	}
-	return s.repo.FindByID(ctx, driverID)
+	return driver, nil
 }
 
 // GetNearby returns driver IDs within radiusKm of the given point.
