@@ -44,6 +44,7 @@ func main() {
 	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 	if err := kafkaClient.EnsureTopics(ctx,
 		kafka.TopicRideRequested,
+		kafka.TopicRideOffered,
 		kafka.TopicDriverAssigned,
 		kafka.TopicTripCompleted,
 		kafka.TopicTripCancelled,
@@ -56,6 +57,17 @@ func main() {
 	repo := repositories.NewRepository(pool)
 
 	// Kafka consumers
+	kafkaClient.Subscribe(ctx, kafka.TopicRideOffered, "notif-ride-offered", func(data []byte) error {
+		var ev kafka.RideOfferedEvent
+		if err := json.Unmarshal(data, &ev); err != nil {
+			return err
+		}
+		log.Printf("[notifications] ride.offered: trip=%s driver=%s", ev.TripID, ev.DriverID)
+		return repo.Create(ctx, ev.DriverID, "ride_offered", "New Ride Request",
+			"A rider needs a trip. Open the app to accept or decline.",
+			ev.TripID+":"+ev.DriverID+":ride_offered")
+	})
+
 	kafkaClient.Subscribe(ctx, kafka.TopicRideRequested, "notif-ride-requested", func(data []byte) error {
 		var ev kafka.RideRequestedEvent
 		if err := json.Unmarshal(data, &ev); err != nil {

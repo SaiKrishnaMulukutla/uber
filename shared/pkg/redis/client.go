@@ -138,6 +138,32 @@ func (c *Client) GetDriverGeoPos(ctx context.Context, driverID string) (float64,
 	return positions[0].Latitude, positions[0].Longitude, nil
 }
 
+// SetOffer stores the chosen driverID as the pending offer for tripID with a TTL.
+func (c *Client) SetOffer(ctx context.Context, tripID, driverID string, ttl time.Duration) error {
+	return c.rdb.Set(ctx, "offer:"+tripID, driverID, ttl).Err()
+}
+
+// GetOffer returns the driverID for a pending offer, or an error if none exists.
+func (c *Client) GetOffer(ctx context.Context, tripID string) (string, error) {
+	return c.rdb.Get(ctx, "offer:"+tripID).Result()
+}
+
+// DeleteOffer removes a pending offer and its associated event payload.
+func (c *Client) DeleteOffer(ctx context.Context, tripID string) error {
+	return c.rdb.Del(ctx, "offer:"+tripID, "offer:req:"+tripID).Err()
+}
+
+// SetOfferEvent stores the original ride.requested event JSON alongside the offer.
+// Used by driver-service to re-queue the trip on rejection.
+func (c *Client) SetOfferEvent(ctx context.Context, tripID string, data []byte, ttl time.Duration) error {
+	return c.rdb.Set(ctx, "offer:req:"+tripID, data, ttl).Err()
+}
+
+// GetOfferEvent retrieves the original ride.requested event JSON for a pending offer.
+func (c *Client) GetOfferEvent(ctx context.Context, tripID string) ([]byte, error) {
+	return c.rdb.Get(ctx, "offer:req:"+tripID).Bytes()
+}
+
 // GetSurge returns the surge multiplier from the key "surge:multiplier".
 // Falls back to 1.0 if the key is absent or unparseable.
 // Set via: redis-cli SET surge:multiplier 1.5
