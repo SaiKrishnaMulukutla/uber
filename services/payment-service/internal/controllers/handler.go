@@ -14,7 +14,6 @@ import (
 	"uber/shared/pkg/jwt"
 )
 
-// PaymentServicer is the subset of service.PaymentService the handler needs.
 type PaymentServicer interface {
 	CreateOrder(ctx context.Context, paymentID string) (*model.OrderResponse, error)
 	VerifyPayment(ctx context.Context, req model.VerifyRequest) (*model.Payment, error)
@@ -24,6 +23,7 @@ type PaymentServicer interface {
 	GetByPaymentID(ctx context.Context, id string) (*model.Payment, error)
 	GetByTripID(ctx context.Context, tripID string) (*model.Payment, error)
 	ListByUser(ctx context.Context, userID string, limit, offset int) (*model.PaymentHistoryResponse, error)
+	GetEarnings(ctx context.Context, driverID, period string) (*model.EarningsResponse, error)
 }
 
 type Handler struct {
@@ -56,6 +56,12 @@ func (h *Handler) Routes() chi.Router {
 		r.Post("/orders", h.CreateOrder)
 		r.Post("/simulate-success", h.Simulate)
 		r.Post("/{id}/confirm-cash", h.ConfirmCash)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(jwt.RequireAuth)
+		r.Use(jwt.RequireRole("driver"))
+		r.Get("/earnings", h.Earnings)
 	})
 
 	return r
@@ -178,6 +184,17 @@ func (h *Handler) ConfirmCash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": p.Status, "amount": p.Amount})
+}
+
+func (h *Handler) Earnings(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	period := r.URL.Query().Get("period") // week | month | all (default)
+	resp, err := h.svc.GetEarnings(r.Context(), claims.UserID, period)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func parsePagination(r *http.Request) (limit, offset int) {
