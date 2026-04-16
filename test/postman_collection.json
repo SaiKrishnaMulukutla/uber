@@ -459,7 +459,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"password\": \"Driver1234\",\n  \"vehicle_type\": \"sedan\",\n  \"license_plate\": \"KA-01-AB-1234\"\n}"
+              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"email\": \"ravi@demo.com\",\n  \"phone\": \"+918888888888\",\n  \"password\": \"Driver1234\",\n  \"vehicle_type\": \"x\",\n  \"license_plate\": \"KA-01-AB-1234\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/drivers/register",
@@ -478,7 +478,7 @@
               "name": "201 Created",
               "status": "Created",
               "code": 201,
-              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"sedan\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"offline\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
+              "body": "{\n  \"access_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"refresh_token\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"driver\": {\n    \"id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n    \"name\": \"Ravi Kumar\",\n    \"email\": \"ravi@demo.com\",\n    \"phone\": \"+918888888888\",\n    \"vehicle_type\": \"x\",\n    \"license_plate\": \"KA-01-AB-1234\",\n    \"status\": \"offline\",\n    \"rating\": 5,\n    \"rating_count\": 0,\n    \"created_at\": \"2026-03-08T10:00:00Z\"\n  }\n}"
             },
             {
               "name": "409 Duplicate",
@@ -1479,6 +1479,74 @@
               "body": "{\n  \"trips\": [\n    {\n      \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n      \"status\": \"COMPLETED\",\n      \"fare\": 112.22,\n      \"created_at\": \"2026-03-08T10:00:00Z\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 10,\n  \"offset\": 0\n}"
             }
           ]
+        },
+        {
+          "name": "11. Get Surge Multiplier (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/trips/surge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "surge"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"multiplier\": 1.5}"
+            }
+          ]
+        },
+        {
+          "name": "12. Set Surge Multiplier (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"multiplier\": 1.5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/trips/surge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "trips",
+                "surge"
+              ]
+            }
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\"multiplier\": 1.5}"
+            }
+          ]
         }
       ]
     },
@@ -1842,6 +1910,44 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"payments\": [\n    {\n      \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n      \"trip_id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n      \"amount\": 112.22,\n      \"status\": \"COMPLETED\",\n      \"payment_method\": \"cash\",\n      \"created_at\": \"2026-03-08T10:25:00Z\"\n    }\n  ],\n  \"total\": 1,\n  \"limit\": 10,\n  \"offset\": 0\n}"
+            }
+          ]
+        },
+        {
+          "name": "8. Driver Earnings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driver_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/payments/earnings?period=week",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "payments",
+                "earnings"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "week",
+                  "description": "week | month | all"
+                }
+              ]
+            },
+            "description": "Driver-only. Returns total earnings and daily breakdown for the given period."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "body": "{\n  \"period\": \"week\",\n  \"total_earnings\": 1240.50,\n  \"trip_count\": 18,\n  \"daily\": [\n    {\"date\": \"2026-04-10\", \"amount\": 320.00, \"trips\": 5},\n    {\"date\": \"2026-04-11\", \"amount\": 210.50, \"trips\": 3}\n  ]\n}"
             }
           ]
         }
