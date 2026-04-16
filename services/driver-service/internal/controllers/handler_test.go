@@ -20,14 +20,15 @@ import (
 // ---------- mock ----------
 
 type mockDriverService struct {
-	RegisterFn       func(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error)
-	LoginFn          func(ctx context.Context, req model.LoginRequest) error
-	VerifyLoginFn    func(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
-	RefreshFn        func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
-	GetByIDFn        func(ctx context.Context, id string) (*model.Driver, error)
-	UpdateLocationFn func(ctx context.Context, driverID string, lat, lng float64) error
-	UpdateStatusFn   func(ctx context.Context, driverID, status string) (*model.Driver, error)
-	GetNearbyFn      func(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
+	RegisterFn         func(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error)
+	LoginFn            func(ctx context.Context, req model.LoginRequest) error
+	VerifyLoginFn      func(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
+	RefreshFn          func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
+	GetByIDFn          func(ctx context.Context, id string) (*model.Driver, error)
+	UpdateLocationFn   func(ctx context.Context, driverID string, lat, lng float64) error
+	UpdateStatusFn     func(ctx context.Context, driverID, status string) (*model.Driver, error)
+	GetNearbyFn        func(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
+	RespondToOfferFn   func(ctx context.Context, driverID, tripID string, accept bool) error
 }
 
 func (m *mockDriverService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
@@ -53,6 +54,12 @@ func (m *mockDriverService) UpdateStatus(ctx context.Context, driverID, status s
 }
 func (m *mockDriverService) GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error) {
 	return m.GetNearbyFn(ctx, lat, lng, radiusKm)
+}
+func (m *mockDriverService) RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error {
+	if m.RespondToOfferFn != nil {
+		return m.RespondToOfferFn(ctx, driverID, tripID, accept)
+	}
+	return nil
 }
 
 // ---------- helpers ----------
@@ -227,6 +234,98 @@ func TestRefresh_Success(t *testing.T) {
 	json.NewDecoder(rec.Body).Decode(&resp)
 	if resp.AccessToken != "new-access" {
 		t.Fatalf("unexpected access token: %s", resp.AccessToken)
+	}
+}
+
+func TestRespondToOffer_Accept(t *testing.T) {
+	var capturedDriverID, capturedTripID string
+	var capturedAccept bool
+
+	mock := &mockDriverService{
+		RespondToOfferFn: func(_ context.Context, driverID, tripID string, accept bool) error {
+			capturedDriverID = driverID
+			capturedTripID = tripID
+			capturedAccept = accept
+			return nil
+		},
+	}
+	router := driverRouter(mock)
+
+	tok, _ := jwt.Generate("driver-1", "d@example.com", "driver")
+	rec := doRequest(router, http.MethodPost, "/drivers/trips/trip-99/respond", map[string]bool{"accept": true}, tok)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedDriverID != "driver-1" {
+		t.Errorf("expected driverID driver-1, got %s", capturedDriverID)
+	}
+	if capturedTripID != "trip-99" {
+		t.Errorf("expected tripID trip-99, got %s", capturedTripID)
+	}
+	if !capturedAccept {
+		t.Error("expected accept=true")
+	}
+}
+
+func TestRespondToOffer_Reject(t *testing.T) {
+	var capturedAccept bool
+
+	mock := &mockDriverService{
+		RespondToOfferFn: func(_ context.Context, _, _ string, accept bool) error {
+			capturedAccept = accept
+			return nil
+		},
+	}
+	router := driverRouter(mock)
+
+	tok, _ := jwt.Generate("driver-1", "d@example.com", "driver")
+	rec := doRequest(router, http.MethodPost, "/drivers/trips/trip-99/respond", map[string]bool{"accept": false}, tok)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedAccept {
+		t.Error("expected accept=false")
+	}
+}
+
+func TestRespondToOffer_NoOffer(t *testing.T) {
+	mock := &mockDriverService{
+		RespondToOfferFn: func(_ context.Context, _, _ string, _ bool) error {
+			return errors.New("no pending offer for this trip")
+		},
+	}
+	router := driverRouter(mock)
+
+	tok, _ := jwt.Generate("driver-1", "d@example.com", "driver")
+	rec := doRequest(router, http.MethodPost, "/drivers/trips/trip-99/respond", map[string]bool{"accept": true}, tok)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRespondToOffer_RequiresAuth(t *testing.T) {
+	mock := &mockDriverService{}
+	router := driverRouter(mock)
+
+	rec := doRequest(router, http.MethodPost, "/drivers/trips/trip-99/respond", map[string]bool{"accept": true}, "")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRespondToOffer_RequiresDriverRole(t *testing.T) {
+	mock := &mockDriverService{}
+	router := driverRouter(mock)
+
+	riderToken, _ := jwt.Generate("u1", "rider@example.com", "rider")
+	rec := doRequest(router, http.MethodPost, "/drivers/trips/trip-99/respond", map[string]bool{"accept": true}, riderToken)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
