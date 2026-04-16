@@ -29,6 +29,7 @@ type DriverServicer interface {
 	UpdateLocation(ctx context.Context, driverID string, lat, lng float64) error
 	UpdateStatus(ctx context.Context, driverID, status string) (*model.Driver, error)
 	GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
+	RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error
 }
 
 // Handler exposes driver HTTP endpoints.
@@ -53,6 +54,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Get("/{id}", h.GetByID)
 		r.Patch("/{id}/location", h.UpdateLocation)
 		r.Patch("/{id}/status", h.UpdateStatus)
+		r.Post("/trips/{tripId}/respond", h.RespondToOffer)
 	})
 
 	return r
@@ -252,6 +254,27 @@ func (h *Handler) GetNearby(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"drivers": ids})
+}
+
+func (h *Handler) RespondToOffer(w http.ResponseWriter, r *http.Request) {
+	claims := jwt.GetClaims(r.Context())
+	if claims == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	tripID := chi.URLParam(r, "tripId")
+	var req struct {
+		Accept bool `json:"accept"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if err := h.svc.RespondToOffer(r.Context(), claims.UserID, tripID, req.Accept); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

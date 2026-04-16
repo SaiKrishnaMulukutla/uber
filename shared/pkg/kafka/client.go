@@ -17,6 +17,7 @@ import (
 // Well-known topic names.
 const (
 	TopicRideRequested    = "ride.requested"
+	TopicRideOffered      = "ride.offered"
 	TopicDriverAssigned   = "driver.assigned"
 	TopicTripCompleted    = "trip.completed"
 	TopicTripCancelled    = "trip.cancelled"
