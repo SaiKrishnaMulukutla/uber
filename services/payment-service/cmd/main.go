@@ -52,7 +52,7 @@ func main() {
 	var prov provider.PaymentProvider
 	switch cfg.PaymentProvider {
 	case "razorpay":
-		rzp := rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret, cfg.TLSSkipVerify)
+		rzp := rzpprov.New(cfg.RazorpayKeyID, cfg.RazorpayKeySecret, cfg.RazorpayWebhookSecret)
 		prov = rzp
 		log.Println("[payments] using Razorpay payment provider")
 	default:

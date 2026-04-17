@@ -12,6 +12,24 @@ type Mailer interface {
 	Send(to, subject, body string) error
 }
 
+// WithFallback returns a Mailer that tries primary first and falls back to
+// secondary on any error. Useful for Brevo (prod) → SMTP (local/dev).
+func WithFallback(primary, secondary Mailer) Mailer {
+	return &fallbackMailer{primary: primary, secondary: secondary}
+}
+
+type fallbackMailer struct {
+	primary   Mailer
+	secondary Mailer
+}
+
+func (f *fallbackMailer) Send(to, subject, body string) error {
+	if err := f.primary.Send(to, subject, body); err != nil {
+		return f.secondary.Send(to, subject, body)
+	}
+	return nil
+}
+
 // GmailMailer sends email via SMTP with STARTTLS on port 587.
 type GmailMailer struct {
 	host string

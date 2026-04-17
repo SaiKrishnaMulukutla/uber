@@ -36,7 +36,12 @@ func main() {
 
 	var m mailer.Mailer
 	if cfg.EmailUser != "" && cfg.EmailPass != "" {
-		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
+		smtp := mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass)
+		if cfg.BrevoAPIKey != "" {
+			m = mailer.NewAsync(mailer.WithFallback(mailer.NewBrevo(cfg.BrevoAPIKey, cfg.EmailUser), smtp), 5)
+		} else {
+			m = mailer.NewAsync(smtp, 5)
+		}
 	}
 
 	pool := db.MustConnect(ctx, cfg.DatabaseURL, migrations.FS)

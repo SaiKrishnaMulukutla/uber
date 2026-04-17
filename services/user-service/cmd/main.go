@@ -52,10 +52,13 @@ func main() {
 	repo := repositories.NewRepository(pool)
 
 	var m mailer.Mailer
-	if cfg.BrevoAPIKey != "" && cfg.EmailUser != "" {
-		m = mailer.NewAsync(mailer.NewBrevo(cfg.BrevoAPIKey, cfg.EmailUser), 5)
-	} else if cfg.EmailUser != "" && cfg.EmailPass != "" {
-		m = mailer.NewAsync(mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass), 5)
+	if cfg.EmailUser != "" && cfg.EmailPass != "" {
+		smtp := mailer.New(cfg.EmailHost, cfg.EmailPort, cfg.EmailUser, cfg.EmailPass)
+		if cfg.BrevoAPIKey != "" {
+			m = mailer.NewAsync(mailer.WithFallback(mailer.NewBrevo(cfg.BrevoAPIKey, cfg.EmailUser), smtp), 5)
+		} else {
+			m = mailer.NewAsync(smtp, 5)
+		}
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)
