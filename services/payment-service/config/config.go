@@ -16,7 +16,6 @@ type Config struct {
 	RazorpayKeyID         string
 	RazorpayKeySecret     string
 	RazorpayWebhookSecret string
-	TLSSkipVerify         bool
 }
 
 func Load() Config {
@@ -30,6 +29,5 @@ func Load() Config {
 		RazorpayKeyID:         env.Get("RAZORPAY_KEY_ID", ""),
 		RazorpayKeySecret:     env.Get("RAZORPAY_KEY_SECRET", ""),
 		RazorpayWebhookSecret: env.Get("RAZORPAY_WEBHOOK_SECRET", ""),
-		TLSSkipVerify:         env.GetBool("TLS_SKIP_VERIFY", false),
 	}
 }

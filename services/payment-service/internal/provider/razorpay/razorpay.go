@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -28,19 +27,9 @@ type Provider struct {
 }
 
 // New returns a Razorpay-backed PaymentProvider.
-// skipTLS disables certificate verification — set true only for local dev behind a TLS-inspection proxy.
-func New(keyID, keySecret, webhookSecret string, skipTLS bool) *Provider {
-	transport := http.DefaultTransport
-	if skipTLS {
-		transport = &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // local dev only
-		}
-	}
-	httpClient := &http.Client{Timeout: 30 * time.Second, Transport: transport}
+func New(keyID, keySecret, webhookSecret string) *Provider {
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 	c := rzp.NewClient(keyID, keySecret)
-	if skipTLS {
-		c.Request.HTTPClient = httpClient
-	}
 	return &Provider{
 		client:        c,
 		keyID:         keyID,

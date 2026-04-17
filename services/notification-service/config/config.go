@@ -15,6 +15,7 @@ type Config struct {
 	EmailPort    int
 	EmailUser    string
 	EmailPass    string
+	BrevoAPIKey  string
 }
 
 func Load() Config {
@@ -27,5 +28,6 @@ func Load() Config {
 		EmailPort:    env.GetInt("EMAIL_PORT", 587),
 		EmailUser:    env.Get("EMAIL_USER", ""),
 		EmailPass:    env.Get("EMAIL_PASS", ""),
+		BrevoAPIKey:  env.Get("BREVO_API_KEY", ""),
 	}
 }

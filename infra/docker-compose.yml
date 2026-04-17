@@ -210,7 +210,6 @@ services:
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
       RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
       RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
-      TLS_SKIP_VERIFY: ${TLS_SKIP_VERIFY:-false}
       BASE_URL: ${BASE_URL:-http://localhost:8000}
     ports:
       - "8085:8085"
@@ -233,6 +232,12 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8081
+      - DRIVER_SERVICE_URL=http://driver-service:8082
+      - TRIP_SERVICE_URL=http://trip-service:8083
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8084
+      - PAYMENT_SERVICE_URL=http://payment-service:8085
     depends_on:
       - user-service
       - driver-service
