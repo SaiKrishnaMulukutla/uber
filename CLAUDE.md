@@ -30,7 +30,7 @@ These rules are **non-negotiable** and must be followed in every feature, fix, o
 
 ## Kafka Events
 
-- 6 topics: `ride.requested`, `driver.assigned`, `trip.completed`, `trip.cancelled`, `rating.submitted`, `payment.completed`.
+- 7 topics: `ride.requested`, `ride.offered`, `driver.assigned`, `trip.completed`, `trip.cancelled`, `rating.submitted`, `payment.completed`.
 - Event structs are defined in `shared/pkg/kafka/events.go` — **always use these**, never define ad-hoc structs.
 - Consumers must be idempotent — Kafka can redeliver.
 

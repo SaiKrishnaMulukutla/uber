@@ -37,7 +37,7 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 - **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
 - **Multi-method payments** — cash (driver-confirmed), UPI (scannable QR + VPA), or Razorpay card; browser-based checkout page with real-time WebSocket completion push
 - **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
-- **Event-driven consistency** — 6 Kafka topics decouple all services; no cross-service foreign keys
+- **Event-driven consistency** — 7 Kafka topics decouple all services; no cross-service foreign keys
 - **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
 - **Vehicle categories** — `go` (hatchback), `x` (sedan, default), `xl` (SUV) with per-category base fare and per-km rate
 - **Surge pricing** — fare multiplier computed server-side, capped at 5×; admin-controlled via `GET/PATCH /trips/surge`
@@ -79,7 +79,7 @@ flowchart TD
     subgraph Data["Data Layer"]
         PG[("PostgreSQL · 5 DBs")]
         Redis[("Redis · GEO + locks")]
-        Kafka[["Kafka KRaft · 6 topics"]]
+        Kafka[["Kafka KRaft · 7 topics"]]
     end
 
     Client -->|HTTP / WS| Nginx
