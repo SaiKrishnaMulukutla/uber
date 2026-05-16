@@ -44,3 +44,8 @@ type RefreshResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
+
+type UpdateRequest struct {
+	Name  string `json:"name"`
+	Phone string `json:"phone"`
+}

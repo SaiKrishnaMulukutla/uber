@@ -40,3 +40,7 @@ func ValidateDriverStatus(s string) bool {
 func ValidateRatingScore(score int) bool {
 	return score >= 1 && score <= 5
 }
+
+func ValidateVehicleType(vt string) bool {
+	return vt == "go" || vt == "x" || vt == "xl"
+}

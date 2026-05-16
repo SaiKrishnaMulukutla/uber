@@ -26,6 +26,7 @@ type UserService interface {
 	VerifyLogin(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
+	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
 }
 
 type userService struct {
@@ -130,5 +131,9 @@ func (s *userService) GetByID(ctx context.Context, id string) (*model.User, erro
 		return nil, errors.New("user not found")
 	}
 	return u, nil
+}
+
+func (s *userService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error) {
+	return s.repo.Update(ctx, id, req.Name, req.Phone)
 }
 

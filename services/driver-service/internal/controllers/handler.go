@@ -30,6 +30,7 @@ type DriverServicer interface {
 	UpdateStatus(ctx context.Context, driverID, status string) (*model.Driver, error)
 	GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
 	RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error
+	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
 }
 
 // Handler exposes driver HTTP endpoints.
@@ -52,6 +53,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Use(jwt.RequireRole("driver"))
 		r.Get("/nearby", h.GetNearby)
 		r.Get("/{id}", h.GetByID)
+		r.Patch("/{id}", h.UpdateProfile)
 		r.Patch("/{id}/location", h.UpdateLocation)
 		r.Patch("/{id}/status", h.UpdateStatus)
 		r.Post("/trips/{tripId}/respond", h.RespondToOffer)
@@ -155,6 +157,42 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	claims := jwt.GetClaims(r.Context())
+	if claims == nil || claims.UserID != id {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	var req model.UpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if req.Name != "" && !validation.ValidateName(req.Name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		return
+	}
+	if req.Phone != "" && !validation.ValidatePhone(req.Phone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		return
+	}
+	if req.VehicleType != "" && !validation.ValidateVehicleType(req.VehicleType) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle_type must be go, x, or xl"})
+		return
+	}
+	if req.LicensePlate != "" && strings.TrimSpace(req.LicensePlate) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid license_plate"})
+		return
+	}
+	d, err := h.svc.Update(r.Context(), id, req)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
