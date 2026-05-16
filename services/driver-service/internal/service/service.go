@@ -98,7 +98,7 @@ func (s *driverService) Register(ctx context.Context, req model.RegisterRequest)
 	}
 
 	if s.mailer != nil {
-		if err := s.mailer.Send(d.Email, "Welcome to Uber!", welcomeEmailBody(d.Name)); err != nil {
+		if err := s.mailer.Send(d.Email, "Welcome to RideGo!", welcomeEmailBody(d.Name)); err != nil {
 			log.Printf("[driver-service] failed to send welcome email to %s: %v", d.Email, err)
 		}
 	}
@@ -112,30 +112,49 @@ func (s *driverService) Register(ctx context.Context, req model.RegisterRequest)
 
 func welcomeEmailBody(name string) string {
 	return buildEmailLayout(fmt.Sprintf(`
-<h2 style="color:#000;margin:0 0 16px;">Welcome to Uber, %s!</h2>
-<p style="margin:0 0 12px;color:#333;line-height:1.6;">Your driver account has been created successfully. Start accepting rides right away.</p>
-<p style="margin:0;color:#888;font-size:13px;">If you didn't create this account, please contact support immediately.</p>`, name))
+<h2 style="margin:0 0 12px;font-size:22px;font-weight:700;color:#0F172A;">Welcome aboard, %s!</h2>
+<p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.7;">
+  Your RideGo driver account is ready. You can start accepting rides and earning right away.
+</p>
+<table cellpadding="0" cellspacing="0" border="0" width="100%%" style="margin-bottom:24px;">
+  <tr>
+    <td style="background:#F8FAFC;border:1px solid #E2E8F0;border-left:4px solid #0EA5E9;border-radius:4px;padding:16px 20px;">
+      <p style="margin:0 0 4px;font-size:11px;font-weight:600;color:#94A3B8;letter-spacing:1px;text-transform:uppercase;">Next steps</p>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">Go online &rarr; accept ride requests &rarr; start earning.</p>
+    </td>
+  </tr>
+</table>
+<p style="margin:0;font-size:13px;color:#94A3B8;line-height:1.6;">
+  If you didn't create this account, please contact our support team immediately.
+</p>`, name))
 }
 
 func buildEmailLayout(content string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"/><title>Uber</title></head>
-<body style="margin:0;padding:0;background-color:#f6f6f6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-  <table width="100%%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f6f6f6;padding:40px 0;">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>RideGo</title>
+</head>
+<body style="margin:0;padding:0;background-color:#F1F5F9;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F1F5F9;padding:48px 0;">
     <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" border="0"
-             style="background-color:#ffffff;border-radius:4px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <tr><td style="background-color:#000000;padding:28px 40px;">
-          <span style="color:#ffffff;font-size:26px;font-weight:700;letter-spacing:-0.5px;">Uber</span>
-        </td></tr>
-        <tr><td style="padding:40px 40px 28px;">%s</td></tr>
-        <tr><td style="padding:0 40px;"><hr style="border:none;border-top:1px solid #eeeeee;margin:0;"/></td></tr>
-        <tr><td style="padding:24px 40px 32px;">
-          <p style="margin:0 0 4px;font-size:12px;color:#aaaaaa;line-height:1.6;">
-            This is an automated message from Uber. Please do not reply to this email.
+      <table width="560" cellpadding="0" cellspacing="0" border="0"
+             style="background-color:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.07);">
+        <tr>
+          <td style="background-color:#1A1A2E;padding:32px 48px;">
+            <span style="color:#ffffff;font-size:22px;font-weight:700;letter-spacing:1px;">RIDEGO</span>
+            <p style="margin:6px 0 0;color:rgba(255,255,255,0.45);font-size:11px;letter-spacing:2px;text-transform:uppercase;">On-demand rides</p>
+          </td>
+        </tr>
+        <tr><td style="padding:48px 48px 36px;">%s</td></tr>
+        <tr><td style="padding:0 48px;"><hr style="border:none;border-top:1px solid #E2E8F0;margin:0;"/></td></tr>
+        <tr><td style="padding:28px 48px 36px;">
+          <p style="margin:0 0 4px;font-size:12px;color:#94A3B8;line-height:1.7;">
+            This is an automated message from RideGo. Please do not reply to this email.
           </p>
-          <p style="margin:0;font-size:12px;color:#cccccc;line-height:1.6;text-align:center;">
+          <p style="margin:12px 0 0;font-size:12px;color:#CBD5E1;line-height:1.6;text-align:center;">
             Created with &#10084;&#65039; by Mulukutla Sai Krishna
           </p>
         </td></tr>

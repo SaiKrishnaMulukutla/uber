@@ -44,7 +44,7 @@ func renderCheckout(paymentID, token string, amount float64, tripID, providerOrd
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Uber — Payment</title>
+<title>RideGo — Payment</title>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -136,7 +136,7 @@ body{background:linear-gradient(135deg,#f0f0f0 0%%,#e4e4e4 100%%);font-family:-a
   <div class="header">
     <div class="header-row">
       <div>
-        <div class="brand-name">Uber</div>
+        <div class="brand-name">RideGo</div>
         <div class="brand-sub">Trip Payment</div>
       </div>
       <div class="fare-block">
@@ -259,7 +259,7 @@ function openRazorpay(method,btnID){
   setLoading(btnID,true);
   new Razorpay({
     key:RZP_KEY,amount:Math.round(AMOUNT*100),currency:'INR',
-    order_id:RZP_ORDER,name:'Uber',description:'Trip Payment',
+    order_id:RZP_ORDER,name:'RideGo',description:'Trip Payment',
     prefill:{method:method},theme:{color:'#000000'},
     modal:{ondismiss:function(){setLoading(btnID,false);}},
     handler:async function(resp){
@@ -319,7 +319,7 @@ function showSuccess(method,amount){
 
 func renderSuccess(amount float64, method, tripID string) string {
 	return fmt.Sprintf(`<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><title>Uber — Payment Complete</title>
+<html lang="en"><head><meta charset="UTF-8"/><title>RideGo — Payment Complete</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:linear-gradient(135deg,#f0f0f0 0%%,#e4e4e4 100%%);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -340,7 +340,7 @@ body{background:linear-gradient(135deg,#f0f0f0 0%%,#e4e4e4 100%%);font-family:-a
 </style>
 </head><body>
 <div class="card">
-  <div class="header"><div class="logo">Uber</div></div>
+  <div class="header"><div class="logo">RideGo</div></div>
   <div class="body">
     <div class="circle">&#10004;</div>
     <div class="title">Payment Successful</div>
