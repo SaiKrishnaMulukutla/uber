@@ -29,6 +29,7 @@ type mockDriverService struct {
 	UpdateStatusFn     func(ctx context.Context, driverID, status string) (*model.Driver, error)
 	GetNearbyFn        func(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
 	RespondToOfferFn   func(ctx context.Context, driverID, tripID string, accept bool) error
+	UpdateFn           func(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
 }
 
 func (m *mockDriverService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
@@ -60,6 +61,12 @@ func (m *mockDriverService) RespondToOffer(ctx context.Context, driverID, tripID
 		return m.RespondToOfferFn(ctx, driverID, tripID, accept)
 	}
 	return nil
+}
+func (m *mockDriverService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error) {
+	if m.UpdateFn != nil {
+		return m.UpdateFn(ctx, id, req)
+	}
+	return nil, nil
 }
 
 // ---------- helpers ----------
