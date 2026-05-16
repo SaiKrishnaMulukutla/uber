@@ -30,7 +30,8 @@ These rules are **non-negotiable** and must be followed in every feature, fix, o
 
 ## Kafka Events
 
-- 7 topics: `ride.requested`, `ride.offered`, `driver.assigned`, `trip.completed`, `trip.cancelled`, `rating.submitted`, `payment.completed`.
+- 5 topics (Aiven free-tier limit): `ride.requested`, `ride.offered`, `driver.assigned`, `trip.completed`, `ridego.events`.
+- `ridego.events` multiplexes `trip.cancelled`, `rating.submitted`, and `payment.completed` using `EventEnvelope{type, payload json.RawMessage}`. Always use `kafka.NewEnvelope(eventType, payload)` to publish and switch on `env.Type` to consume.
 - Event structs are defined in `shared/pkg/kafka/events.go` — **always use these**, never define ad-hoc structs.
 - Consumers must be idempotent — Kafka can redeliver.
 
