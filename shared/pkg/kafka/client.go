@@ -21,10 +21,8 @@ const (
 	TopicRideRequested    = "ride.requested"
 	TopicRideOffered      = "ride.offered"
 	TopicDriverAssigned   = "driver.assigned"
-	TopicTripCompleted    = "trip.completed"
-	TopicTripCancelled    = "trip.cancelled"
-	TopicRatingSubmitted  = "rating.submitted"
-	TopicPaymentCompleted = "payment.completed"
+	TopicTripCompleted = "trip.completed"
+	TopicRideGoEvents  = "ridego.events" // merged: trip.cancelled + rating.submitted + payment.completed
 )
 
 // Client wraps Kafka operations.
@@ -55,6 +53,8 @@ func buildTLSConfig() *tls.Config {
 }
 
 // NewClient returns a Kafka client. If KAFKA_USERNAME and KAFKA_PASSWORD env
+// vars are set it automatically uses SASL SCRAM-SHA-256 over TLS (Aiven /
+// Redpanda / Confluent). Otherwise it connects plainly for local dev.
 func NewClient(brokers []string) *Client {
 	username := os.Getenv("KAFKA_USERNAME")
 	password := os.Getenv("KAFKA_PASSWORD")
@@ -127,7 +127,7 @@ func (c *Client) EnsureTopics(ctx context.Context, topics ...string) error {
 		for i, t := range topics {
 			configs[i] = kafkago.TopicConfig{
 				Topic:             t,
-				NumPartitions:     3,
+				NumPartitions:     1,
 				ReplicationFactor: 1,
 			}
 		}
