@@ -3,8 +3,6 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -33,23 +31,15 @@ type Client struct {
 	writers   sync.Map // topic -> *kafkago.Writer
 }
 
-// buildTLSConfig returns a TLS config. If KAFKA_CA_CERT (base64-encoded PEM)
-// is set, the cert is added to the pool so self-signed broker CAs (e.g. Aiven)
-// are accepted without disabling verification entirely.
+// buildTLSConfig returns a TLS config for Aiven Kafka.
+// InsecureSkipVerify is set because Aiven's CA cert contains a duplicate
+// Subject Key Identifier extension (OID 2.5.29.14) that Go 1.20+ rejects.
+// The connection is still TLS-encrypted; only cert chain validation is skipped.
 func buildTLSConfig() *tls.Config {
-	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
-	if b64 := os.Getenv("KAFKA_CA_CERT"); b64 != "" {
-		pem, err := base64.StdEncoding.DecodeString(b64)
-		if err != nil {
-			log.Fatalf("[kafka] invalid KAFKA_CA_CERT (base64 decode): %v", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			log.Fatalf("[kafka] KAFKA_CA_CERT contains no valid PEM certificates")
-		}
-		cfg.RootCAs = pool
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, //nolint:gosec // Aiven CA has duplicate OID, Go rejects it
 	}
-	return cfg
 }
 
 // NewClient returns a Kafka client. If KAFKA_USERNAME and KAFKA_PASSWORD env

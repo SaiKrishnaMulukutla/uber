@@ -23,24 +23,32 @@ func Connect(ctx context.Context, dsn string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: invalid dsn: %w", err)
 	}
-	config.MaxConns = 25
-	config.MinConns = 5
+	config.MaxConns = 10
+	config.MinConns = 2
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.MaxConnLifetime = 30 * time.Minute
 
-	var pool *pgxpool.Pool
+	// Create the pool once — NewWithConfig does not open connections immediately.
+	// Retrying NewWithConfig in a loop leaks pools (each spawns MinConns background
+	// goroutines), which exhausts the DB's connection limit.
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("postgres: invalid config: %w", err)
+	}
+
+	var lastErr error
 	for i := 0; i < 30; i++ {
-		pool, err = pgxpool.NewWithConfig(ctx, config)
-		if err == nil {
-			if pingErr := pool.Ping(ctx); pingErr == nil {
-				log.Println("Connected to PostgreSQL")
-				return &DB{Pool: pool}, nil
-			}
+		if pingErr := pool.Ping(ctx); pingErr == nil {
+			log.Println("Connected to PostgreSQL")
+			return &DB{Pool: pool}, nil
+		} else {
+			lastErr = pingErr
 		}
-		log.Printf("Waiting for PostgreSQL... (%d/30)", i+1)
+		log.Printf("Waiting for PostgreSQL... (%d/30): %v", i+1, lastErr)
 		time.Sleep(2 * time.Second)
 	}
-	return nil, fmt.Errorf("postgres: failed after 30 attempts: %w", err)
+	pool.Close()
+	return nil, fmt.Errorf("postgres: failed after 30 attempts: %w", lastErr)
 }
 
 // RunMigrations reads SQL files from the embedded FS and applies them in order.
