@@ -35,6 +35,7 @@ type Trip struct {
 	CompletedAt     *time.Time `json:"completed_at,omitempty"`
 	DurationSeconds *int64     `json:"duration_seconds,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	RideOTP *string `json:"ride_otp,omitempty"`
 }
 
 type Rating struct {
@@ -60,6 +61,10 @@ type TripRequest struct {
 
 type AssignRequest struct {
 	DriverID string `json:"driverId"`
+}
+
+type StartRequest struct {
+	OTP string `json:"otp"`
 }
 
 type EndRequest struct {
