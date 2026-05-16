@@ -35,6 +35,7 @@ type DriverService interface {
 	UpdateStatus(ctx context.Context, driverID, status string) (*model.Driver, error)
 	GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
 	RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error
+	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
 }
 
 type driverService struct {
@@ -155,6 +156,20 @@ func (s *driverService) Refresh(ctx context.Context, refreshToken string) (*mode
 
 func (s *driverService) GetByID(ctx context.Context, id string) (*model.Driver, error) {
 	return s.repo.FindByID(ctx, id)
+}
+
+func (s *driverService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error) {
+	d, err := s.repo.Update(ctx, id, req.Name, req.Phone, req.VehicleType, req.LicensePlate)
+	if err != nil {
+		return nil, err
+	}
+	// If vehicle type changed, sync the Redis cache so matching uses the new tier.
+	if req.VehicleType != "" {
+		if cacheErr := s.redis.SetDriverType(ctx, id, d.VehicleType); cacheErr != nil {
+			log.Printf("[driver-service] warn: failed to update cached vehicle type for driver %s: %v", id, cacheErr)
+		}
+	}
+	return d, nil
 }
 
 // UpdateLocation stores the driver's position in Redis (GEO set + backup key).

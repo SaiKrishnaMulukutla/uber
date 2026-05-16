@@ -18,6 +18,7 @@ type DriverRepository interface {
 	FindByID(ctx context.Context, id string) (*model.Driver, error)
 	UpdateStatus(ctx context.Context, driverID, status string) error
 	UpdateRating(ctx context.Context, driverID string, score int) error
+	Update(ctx context.Context, id, name, phone, vehicleType, licensePlate string) (*model.Driver, error)
 }
 
 type pgDriverRepository struct{ pool *pgxpool.Pool }
@@ -68,6 +69,25 @@ func (r *pgDriverRepository) FindByID(ctx context.Context, id string) (*model.Dr
 	err := r.pool.QueryRow(ctx,
 		`SELECT id,name,email,phone,vehicle_type,license_plate,status,rating,rating_count,created_at
 		 FROM drivers WHERE id=$1`, id).
+		Scan(&d.ID, &d.Name, &d.Email, &d.Phone,
+			&d.VehicleType, &d.LicensePlate, &d.Status, &d.Rating, &d.RatingCount, &d.CreatedAt)
+	if err != nil {
+		return nil, errors.New("driver not found")
+	}
+	return &d, nil
+}
+
+func (r *pgDriverRepository) Update(ctx context.Context, id, name, phone, vehicleType, licensePlate string) (*model.Driver, error) {
+	var d model.Driver
+	err := r.pool.QueryRow(ctx,
+		`UPDATE drivers SET
+		   name          = COALESCE(NULLIF($1, ''), name),
+		   phone         = COALESCE(NULLIF($2, ''), phone),
+		   vehicle_type  = COALESCE(NULLIF($3, ''), vehicle_type),
+		   license_plate = COALESCE(NULLIF($4, ''), license_plate)
+		 WHERE id = $5
+		 RETURNING id, name, email, phone, vehicle_type, license_plate, status, rating, rating_count, created_at`,
+		name, phone, vehicleType, licensePlate, id).
 		Scan(&d.ID, &d.Name, &d.Email, &d.Phone,
 			&d.VehicleType, &d.LicensePlate, &d.Status, &d.Rating, &d.RatingCount, &d.CreatedAt)
 	if err != nil {
