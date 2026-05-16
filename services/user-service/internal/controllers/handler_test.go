@@ -25,6 +25,7 @@ type mockUserService struct {
 	VerifyLoginFn func(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
 	RefreshFn     func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByIDFn     func(ctx context.Context, id string) (*model.User, error)
+	UpdateFn      func(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
 }
 
 func (m *mockUserService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
@@ -41,6 +42,12 @@ func (m *mockUserService) Refresh(ctx context.Context, refreshToken string) (*mo
 }
 func (m *mockUserService) GetByID(ctx context.Context, id string) (*model.User, error) {
 	return m.GetByIDFn(ctx, id)
+}
+func (m *mockUserService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error) {
+	if m.UpdateFn != nil {
+		return m.UpdateFn(ctx, id, req)
+	}
+	return nil, nil
 }
 
 // ---------- helpers ----------
