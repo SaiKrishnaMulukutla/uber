@@ -170,15 +170,15 @@ Ask: "Could I copy this package into a completely unrelated Go project and use i
 
 ### Current topics
 
+5 topics total (Aiven free-tier limit). `ridego.events` multiplexes 3 low-traffic event types via `EventEnvelope{type, payload json.RawMessage}`. Consumers unmarshal `payload` only after checking `type`.
+
 | Topic | Published by | Consumed by |
 |-------|-------------|-------------|
 | `ride.requested` | trip-service | matching-service |
 | `ride.offered` | matching-service | notification-service |
 | `driver.assigned` | driver-service (accept) — includes `rider_id` | trip-service (assign driver + generate ride OTP in Redis), driver-service (mark busy), notification-service (notify driver + rider) |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
-| `trip.cancelled` | trip-service | driver-service, notification-service |
-| `rating.submitted` | trip-service | driver-service, user-service, notification-service |
-| `payment.completed` | payment-service | notification-service |
+| `ridego.events` | trip-service (`trip.cancelled`, `rating.submitted`), payment-service (`payment.completed`) | matching-service, driver-service, user-service, notification-service |
 
 ### Rules
 
@@ -193,10 +193,19 @@ Ask: "Could I copy this package into a completely unrelated Go project and use i
 
 ### Adding a new topic
 
+> ⚠️ Aiven free tier is capped at **5 topics**. Before creating a new topic, consider whether the event belongs on `ridego.events` (add a new `EventType*` constant and wrap with `NewEnvelope`).
+
+If a dedicated topic is truly needed:
 1. Add the constant to `shared/pkg/kafka/client.go`
 2. Add the event struct to `shared/pkg/kafka/events.go`
 3. Call `kafkaClient.EnsureTopics(ctx, kafka.TopicNewName)` in the publisher's `cmd/main.go`
 4. Update the table above in this document
+
+To add a new event type to `ridego.events` instead:
+1. Add `EventTypeXxx = "xxx"` constant to `shared/pkg/kafka/events.go`
+2. Add the payload struct to `shared/pkg/kafka/events.go`
+3. Publish: `kafka.NewEnvelope(kafka.EventTypeXxx, payload)` → `Publish(ctx, kafka.TopicRideGoEvents, key, env)`
+4. Consume: add a `case kafka.EventTypeXxx:` branch to the existing `ridego.events` subscriber
 
 ---
 

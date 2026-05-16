@@ -1,17 +1,17 @@
-# Uber — Ride-Hailing Backend
+# RideGo — Ride-Hailing Backend
 
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat&logo=docker&logoColor=white" />
-  <img src="https://img.shields.io/badge/Kafka-KRaft-231F20?style=flat&logo=apachekafka&logoColor=white" />
+  <img src="https://img.shields.io/badge/Kafka-Aiven-231F20?style=flat&logo=apachekafka&logoColor=white" />
   <img src="https://img.shields.io/badge/Redis-GEO-DC382D?style=flat&logo=redis&logoColor=white" />
-  <img src="https://img.shields.io/badge/PostgreSQL-5-336791?style=flat&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-Neon-336791?style=flat&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat" />
 </p>
 
 > **Live demo:** `https://api-gateway-ov0j.onrender.com` (Singapore · Render free tier — first request may take ~30 s to cold-start)
 
-A production-style ride-hailing backend built with Go microservices, event-driven architecture (Kafka), geospatial driver matching (Redis GEO), PostgreSQL, and an NGINX API gateway — all orchestrated via Docker Compose.
+A production-style ride-hailing backend built with Go microservices, event-driven architecture (Aiven Kafka), geospatial driver matching (Upstash Redis GEO), Neon PostgreSQL, and an NGINX API gateway — all orchestrated via Docker Compose and deployed on Render.
 
 ---
 
@@ -38,7 +38,7 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 - **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
 - **Multi-method payments** — cash (driver-confirmed), UPI (scannable QR + VPA), or Razorpay card; browser-based checkout page with real-time WebSocket completion push
 - **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
-- **Event-driven consistency** — 7 Kafka topics decouple all services; no cross-service foreign keys
+- **Event-driven consistency** — 5 Kafka topics decouple all services; `ridego.events` merges low-traffic events via `EventEnvelope`; no cross-service foreign keys
 - **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
 - **Vehicle categories** — `go` (hatchback), `x` (sedan, default), `xl` (SUV) with per-category base fare and per-km rate
 - **Surge pricing** — fare multiplier computed server-side, capped at 5×; admin-controlled via `GET/PATCH /trips/surge`
@@ -80,7 +80,7 @@ flowchart TD
     subgraph Data["Data Layer"]
         PG[("PostgreSQL · 5 DBs")]
         Redis[("Redis · GEO + locks")]
-        Kafka[["Kafka KRaft · 7 topics"]]
+        Kafka[["Aiven Kafka · 5 topics"]]
     end
 
     Client -->|HTTP / WS| Nginx
@@ -122,10 +122,10 @@ PATCH /trips/:id/end
     └─► trip.completed ──► payment-service, driver-service, notification-service (+ email to rider)
 
 POST /trips/:id/rate
-    └─► rating.submitted ──► driver-service, user-service, notification-service
+    └─► ridego.events (rating.submitted) ──► driver-service, user-service, notification-service
 
 payment completed
-    └─► payment.completed ──► notification-service (+ email to rider)
+    └─► ridego.events (payment.completed) ──► notification-service (+ email to rider)
 ```
 
 ---
@@ -149,15 +149,15 @@ payment completed
 
 ## Kafka Topics
 
+5 topics on Aiven (free tier). Low-traffic events are multiplexed onto `ridego.events` using an `EventEnvelope{type, payload}` pattern — consumers switch on `type`.
+
 | Topic | Publisher | Consumers |
 |-------|-----------|-----------|
-| `ride.requested` | trip-service, matching-service (retry), driver-service (reject) | matching-service |
+| `ride.requested` | trip-service | matching-service |
 | `ride.offered` | matching-service | notification-service |
 | `driver.assigned` | driver-service (accept) | trip-service, driver-service, notification-service |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
-| `trip.cancelled` | trip-service (manual + auto-cancel poller) | driver-service, notification-service |
-| `rating.submitted` | trip-service | driver-service, user-service, notification-service |
-| `payment.completed` | payment-service | notification-service |
+| `ridego.events` | trip-service (`trip.cancelled`, `rating.submitted`), payment-service (`payment.completed`) | matching-service, driver-service, user-service, notification-service |
 
 ---
 
@@ -168,11 +168,11 @@ payment completed
 ```bash
 git clone https://github.com/SaiKrishnaMulukutla/uber && cd uber
 cp infra/.env.example infra/.env
-# Edit infra/.env — set POSTGRES_PASSWORD, JWT_SECRET, and EMAIL_* values
+# Edit infra/.env — set DATABASE_URL, REDIS_ADDR, KAFKA_*, JWT_SECRET, EMAIL_* values
 make up
 ```
 
-Services start in dependency order. PostgreSQL and Kafka initialise first (~30 s); application services connect and run schema migrations automatically.
+Services start in dependency order. Application services connect to cloud infrastructure (Neon, Upstash, Aiven) and run schema migrations automatically on first boot.
 
 ```bash
 make logs          # tail all service logs
@@ -185,20 +185,26 @@ make clean         # stop + wipe volumes
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `POSTGRES_PASSWORD` | yes | PostgreSQL superuser password |
+| `DATABASE_URL` | yes | Neon PostgreSQL connection string (`postgresql://...?sslmode=require`) |
+| `REDIS_ADDR` | yes | Upstash Redis URL (`rediss://:<token>@<host>:6379`) |
+| `KAFKA_BROKERS` | yes | Aiven broker (`<host>:25004`) |
+| `KAFKA_USERNAME` | yes | Aiven SASL username |
+| `KAFKA_PASSWORD` | yes | Aiven SASL password |
+| `KAFKA_CA_CERT` | yes | Base64-encoded Aiven project CA PEM (needed for TLS) |
 | `JWT_SECRET` | yes | HS256 signing key — generate with `openssl rand -base64 32` |
-| `EMAIL_HOST` | yes | SMTP host (e.g. `smtp.gmail.com`) |
-| `EMAIL_PORT` | yes | SMTP port (e.g. `587` for STARTTLS) |
-| `EMAIL_USER` | yes | SMTP username / sender address |
-| `EMAIL_PASS` | yes | SMTP password or app password |
+| `BREVO_API_KEY` | yes (prod) | Brevo transactional email API key (used on Render — no SMTP port needed) |
+| `EMAIL_USER` | yes | Sender email address (also activates SMTP fallback in local dev) |
+| `EMAIL_PASS` | local only | Gmail app password (SMTP fallback; Render blocks port 465/587) |
+| `EMAIL_HOST` | no | SMTP host (default: `smtp.gmail.com`) |
+| `EMAIL_PORT` | no | SMTP port (default: `465`) |
 | `PAYMENT_PROVIDER` | no | `cash` (default) or `razorpay` |
 | `RAZORPAY_KEY_ID` | if razorpay | Razorpay API key ID |
 | `RAZORPAY_KEY_SECRET` | if razorpay | Razorpay API key secret |
 | `RAZORPAY_WEBHOOK_SECRET` | if razorpay | Webhook signing secret from Razorpay Dashboard |
-| `INTERNAL_SECRET` | no | Shared secret for service-to-service calls |
-| `ALLOWED_ORIGINS` | no | Comma-separated WebSocket origin allowlist (empty = allow all, dev only) |
+| `INTERNAL_SECRET` | yes | Shared secret for matching-service → trip-service calls |
+| `ALLOWED_ORIGINS` | no | Comma-separated WebSocket origin allowlist (empty = allow all) |
 
-> **Email usage:** `EMAIL_*` serves two purposes — OTP delivery (otp-service) and HTML notification emails on trip completion, trip cancellation, and payment confirmation (notification-service).
+> **Email on prod:** Brevo API (port-free HTTP) fires first; Gmail SMTP is local-dev fallback only and will fail on Render.
 
 ---
 
@@ -397,7 +403,7 @@ Rider opens checkout page → sees waiting state (no action needed)
 
 Driver calls POST /payments/{id}/confirm-cash
   └─► status=COMPLETED
-        └─► payment.completed (Kafka) ──► notification-service
+        └─► ridego.events {type:payment.completed} ──► notification-service
         └─► WebSocket hub broadcast ──► checkout page shows success
 ```
 
@@ -420,7 +426,7 @@ Rider opens checkout_url → UPI tab auto-selected
   └─► Razorpay fires qr_code.credited webhook
         └─► POST /payments/webhook (HMAC verified)
               └─► FindByProviderQRID → status=COMPLETED
-                    └─► payment.completed (Kafka) + WebSocket push → page shows success
+                    └─► ridego.events {type:payment.completed} + WebSocket push → page shows success
 
   ── Option B: VPA Collect ────────────────────────────────────────
   Rider enters UPI ID (e.g. name@paytm) → POST /payments/checkout/{id}/upi { vpa }
@@ -429,7 +435,7 @@ Rider opens checkout_url → UPI tab auto-selected
   └─► Razorpay fires payment.captured webhook
         └─► POST /payments/webhook (HMAC verified)
               └─► FindByProviderOrderID → status=COMPLETED
-                    └─► payment.completed (Kafka) + WebSocket push → page shows success
+                    └─► ridego.events {type:payment.completed} + WebSocket push → page shows success
 ```
 
 ### Card (Razorpay)
@@ -458,7 +464,7 @@ Rider opens checkout_url → UPI tab auto-selected
 
 [5]  POST /payments/verify
        ← HMAC-SHA256(order_id|payment_id) verified against key_secret
-       ← status=COMPLETED → payment.completed (Kafka) → email + in-app notification
+       ← status=COMPLETED → ridego.events {type:payment.completed} → email + in-app notification
 
 [6]  Backup — Razorpay webhook (async, if browser closes before step 5)
        POST /payments/webhook  X-Razorpay-Signature: <hmac>
@@ -505,9 +511,9 @@ REQUESTED ──► DRIVER_ASSIGNED ──────────────�
     │               │            (4-digit, shown to rider in       └── /end
     │               │             GET /trips/{id} response)
     │               └── /cancel ──► CANCELLED
-    │                              └─ driver restored to GEO pool
+    │                              └─ driver restored to GEO pool; ridego.events {trip.cancelled}
     └── auto-cancel after 10 min (no driver found) ──► CANCELLED
-                    └─ trip-service poller + matching-service retries (up to 5× every 15s)
+                    └─ trip-service poller publishes ridego.events {trip.cancelled}
 ```
 
 ### Payment
@@ -519,7 +525,7 @@ card:  PENDING ──► PROCESSING ──► COMPLETED  (Razorpay signature ver
                        └────────► FAILED
 ```
 
-All paths publish `payment.completed` → email + in-app notification to rider.
+All paths publish `ridego.events {type:payment.completed}` → email + in-app notification to rider.
 
 ### Fare Formula
 
