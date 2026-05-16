@@ -243,7 +243,14 @@ func (s *driverService) RespondToOffer(ctx context.Context, driverID, tripID str
 	}
 
 	if accept {
-		ev := kafka.DriverAssignedEvent{TripID: tripID, DriverID: driverID}
+		riderID := ""
+		if eventData, evErr := s.redis.GetOfferEvent(ctx, tripID); evErr == nil {
+			var origEv kafka.RideRequestedEvent
+			if jsonErr := json.Unmarshal(eventData, &origEv); jsonErr == nil {
+				riderID = origEv.RiderID
+			}
+		}
+		ev := kafka.DriverAssignedEvent{TripID: tripID, DriverID: driverID, RiderID: riderID}
 		if err := s.kafka.Publish(ctx, kafka.TopicDriverAssigned, tripID, ev); err != nil {
 			return fmt.Errorf("failed to publish driver.assigned: %w", err)
 		}
