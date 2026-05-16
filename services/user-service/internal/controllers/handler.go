@@ -23,6 +23,7 @@ type UserServicer interface {
 	VerifyLogin(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
+	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
 }
 
 type Handler struct{ svc UserServicer }
@@ -41,6 +42,7 @@ func (h *Handler) Routes() chi.Router {
 		r.Use(jwt.RequireAuth)
 		r.Use(jwt.RequireRole("rider"))
 		r.Get("/{id}", h.GetProfile)
+		r.Patch("/{id}", h.UpdateProfile)
 	})
 
 	return r
@@ -141,6 +143,34 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	claims := jwt.GetClaims(r.Context())
+	if claims == nil || claims.UserID != id {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	var req model.UpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if req.Name != "" && !validation.ValidateName(req.Name) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		return
+	}
+	if req.Phone != "" && !validation.ValidatePhone(req.Phone) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		return
+	}
+	u, err := h.svc.Update(r.Context(), id, req)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, u)
 }
 
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
