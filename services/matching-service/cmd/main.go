@@ -66,7 +66,7 @@ func main() {
 			kafka.TopicRideOffered,
 			kafka.TopicDriverAssigned,
 			kafka.TopicTripCompleted,
-			kafka.TopicTripCancelled,
+			kafka.TopicRideGoEvents,
 		); err != nil {
 			log.Fatalf("kafka topics: %v", err)
 		}
@@ -79,9 +79,16 @@ func main() {
 		})
 
 		// Clean up pending offers when a trip is cancelled (e.g. rider cancels while offer is pending).
-		kafkaClient.Subscribe(ctx, kafka.TopicTripCancelled, "matching-cancel-cleanup", func(data []byte) error {
+		kafkaClient.Subscribe(ctx, kafka.TopicRideGoEvents, "matching-ridego-events", func(data []byte) error {
+			var env kafka.EventEnvelope
+			if err := json.Unmarshal(data, &env); err != nil {
+				return err
+			}
+			if env.Type != kafka.EventTypeTripCancelled {
+				return nil
+			}
 			var ev kafka.TripCancelledEvent
-			if err := json.Unmarshal(data, &ev); err != nil {
+			if err := json.Unmarshal(env.Payload, &ev); err != nil {
 				return err
 			}
 			driverID, err := redisClient.GetOffer(ctx, ev.TripID)

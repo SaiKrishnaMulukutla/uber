@@ -1,5 +1,31 @@
 package kafka
 
+import "encoding/json"
+
+// EventEnvelope wraps events published to the shared ridego.events topic.
+// Consumers decode the Type field first, then unmarshal Payload into the
+// appropriate concrete event struct.
+type EventEnvelope struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+// Event type constants for ridego.events.
+const (
+	EventTypeTripCancelled    = "trip.cancelled"
+	EventTypeRatingSubmitted  = "rating.submitted"
+	EventTypePaymentCompleted = "payment.completed"
+)
+
+// NewEnvelope marshals payload into an EventEnvelope ready for publishing.
+func NewEnvelope(eventType string, payload any) (EventEnvelope, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return EventEnvelope{}, err
+	}
+	return EventEnvelope{Type: eventType, Payload: data}, nil
+}
+
 // LatLng is a coordinate pair used in event payloads.
 type LatLng struct {
 	Lat float64 `json:"lat"`

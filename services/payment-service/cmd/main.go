@@ -42,11 +42,11 @@ func main() {
 	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
 	if err := kafkaClient.EnsureTopics(ctx,
 		kafka.TopicTripCompleted,
-		kafka.TopicPaymentCompleted,
+		kafka.TopicRideGoEvents,
 	); err != nil {
 		log.Fatal(err)
 	}
-	kafkaClient.WarmWriters(kafka.TopicPaymentCompleted)
+	kafkaClient.WarmWriters(kafka.TopicRideGoEvents)
 
 	// Select payment provider based on config
 	var prov provider.PaymentProvider

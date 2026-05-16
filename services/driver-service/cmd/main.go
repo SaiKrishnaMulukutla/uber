@@ -51,8 +51,7 @@ func main() {
 		kafka.TopicRideOffered,
 		kafka.TopicDriverAssigned,
 		kafka.TopicTripCompleted,
-		kafka.TopicTripCancelled,
-		kafka.TopicRatingSubmitted,
+		kafka.TopicRideGoEvents,
 	); err != nil {
 		log.Fatal(err)
 	}
@@ -94,28 +93,34 @@ func main() {
 		return repo.UpdateStatus(ctx, ev.DriverID, model.StatusAvailable)
 	})
 
-	kafkaClient.Subscribe(ctx, kafka.TopicTripCancelled, "driver-status-cancelled", func(data []byte) error {
-		var ev kafka.TripCancelledEvent
-		if err := json.Unmarshal(data, &ev); err != nil {
+	kafkaClient.Subscribe(ctx, kafka.TopicRideGoEvents, "driver-ridego-events", func(data []byte) error {
+		var env kafka.EventEnvelope
+		if err := json.Unmarshal(data, &env); err != nil {
 			return err
 		}
-		if ev.DriverID == "" {
-			return nil
+		switch env.Type {
+		case kafka.EventTypeTripCancelled:
+			var ev kafka.TripCancelledEvent
+			if err := json.Unmarshal(env.Payload, &ev); err != nil {
+				return err
+			}
+			if ev.DriverID == "" {
+				return nil
+			}
+			log.Printf("[driver] trip.cancelled: driver=%s → status=available", ev.DriverID)
+			return repo.UpdateStatus(ctx, ev.DriverID, model.StatusAvailable)
+		case kafka.EventTypeRatingSubmitted:
+			var ev kafka.RatingSubmittedEvent
+			if err := json.Unmarshal(env.Payload, &ev); err != nil {
+				return err
+			}
+			if ev.RateeRole != model.RoleDriver {
+				return nil
+			}
+			log.Printf("[driver] rating.submitted: driver=%s score=%d", ev.RateeID, ev.Score)
+			return repo.UpdateRating(ctx, ev.RateeID, ev.Score)
 		}
-		log.Printf("[driver] trip.cancelled: driver=%s → status=available", ev.DriverID)
-		return repo.UpdateStatus(ctx, ev.DriverID, model.StatusAvailable)
-	})
-
-	kafkaClient.Subscribe(ctx, kafka.TopicRatingSubmitted, "driver-rating-update", func(data []byte) error {
-		var ev kafka.RatingSubmittedEvent
-		if err := json.Unmarshal(data, &ev); err != nil {
-			return err
-		}
-		if ev.RateeRole != model.RoleDriver {
-			return nil
-		}
-		log.Printf("[driver] rating.submitted: driver=%s score=%d", ev.RateeID, ev.Score)
-		return repo.UpdateRating(ctx, ev.RateeID, ev.Score)
+		return nil
 	})
 
 	h := controllers.New(svc)
