@@ -59,16 +59,14 @@ func main() {
 		kafka.TopicRideRequested,
 		kafka.TopicDriverAssigned,
 		kafka.TopicTripCompleted,
-		kafka.TopicTripCancelled,
-		kafka.TopicRatingSubmitted,
+		kafka.TopicRideGoEvents,
 	); err != nil {
 		log.Fatal(err)
 	}
 	kafkaClient.WarmWriters(
 		kafka.TopicRideRequested,
 		kafka.TopicTripCompleted,
-		kafka.TopicTripCancelled,
-		kafka.TopicRatingSubmitted,
+		kafka.TopicRideGoEvents,
 	)
 
 	repo := repositories.NewRepository(pool)
@@ -122,8 +120,10 @@ func main() {
 						Reason:      "no_driver_available",
 						CancelledAt: now.Format(time.RFC3339),
 					}
-					if err := kafkaClient.Publish(ctx, kafka.TopicTripCancelled, t.ID, ev); err != nil {
-						log.Printf("[trip-poller] failed to publish trip.cancelled for %s: %v", t.ID, err)
+					if env, envErr := kafka.NewEnvelope(kafka.EventTypeTripCancelled, ev); envErr == nil {
+						if err := kafkaClient.Publish(ctx, kafka.TopicRideGoEvents, t.ID, env); err != nil {
+							log.Printf("[trip-poller] failed to publish trip.cancelled for %s: %v", t.ID, err)
+						}
 					}
 					log.Printf("[trip-poller] cancelled stuck trip %s (no driver after 5 min)", t.ID)
 				}
