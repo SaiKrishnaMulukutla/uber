@@ -19,7 +19,7 @@ type TripServicer interface {
 	Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	Start(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error)
 	End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
 	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
@@ -29,6 +29,7 @@ type TripServicer interface {
 	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
 	GetSurge(ctx context.Context) float64
 	SetSurge(ctx context.Context, multiplier float64) error
+	GetRideOTP(ctx context.Context, tripID string) (string, error)
 }
 
 // LocationBroadcaster pushes driver coordinates to all WebSocket subscribers of a trip.
@@ -177,6 +178,12 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not your trip"})
 		return
 	}
+	// Show the ride OTP only to the rider while the trip is awaiting start.
+	if claims.UserID == t.RiderID && t.Status == model.StatusDriverAssigned {
+		if otp, otpErr := h.svc.GetRideOTP(r.Context(), t.ID); otpErr == nil {
+			t.RideOTP = &otp
+		}
+	}
 	writeJSON(w, http.StatusOK, t)
 }
 
@@ -206,7 +213,16 @@ func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can start trips"})
 		return
 	}
-	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"), claims.UserID)
+	var req model.StartRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if req.OTP == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp is required"})
+		return
+	}
+	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.OTP)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

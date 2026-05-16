@@ -33,6 +33,7 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 ## Features
 
 - **OTP-based 2FA login** — email/password + 6-digit OTP via SMTP for both riders and drivers
+- **Ride OTP confirmation** — 4-digit OTP generated on driver assignment; rider shares it verbally; driver must submit it to start the trip, preventing ghost rides
 - **Geospatial driver matching** — Redis GEO `GEORADIUS` search finds the nearest available driver and assigns via Kafka
 - **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
 - **Multi-method payments** — cash (driver-confirmed), UPI (scannable QR + VPA), or Razorpay card; browser-based checkout page with real-time WebSocket completion push
@@ -104,7 +105,18 @@ POST /trips/request
                                driver: POST /drivers/trips/{id}/respond {"accept": true}
                                        │
                                driver-service publishes driver.assigned
-                                       └─► trip-service, driver-service, notification-service
+                                       ├─► trip-service  → assigns driver + generates 4-digit ride OTP (stored in Redis)
+                                       ├─► driver-service → marks driver busy
+                                       └─► notification-service
+                                               ├─ notifies driver: "New Trip Assigned"
+                                               └─ notifies rider:  "Driver On the Way! Check app for OTP"
+
+Rider: GET /trips/{id}  (while status = DRIVER_ASSIGNED)
+    └─► response includes ride_otp (only visible to the rider)
+        rider tells the OTP to the driver verbally
+
+Driver: PATCH /trips/{id}/start  { "otp": "1234" }
+    └─► OTP validated against Redis → consumed on success → trip transitions to STARTED
 
 PATCH /trips/:id/end
     └─► trip.completed ──► payment-service, driver-service, notification-service (+ email to rider)
@@ -225,9 +237,9 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | POST | `/trips/estimate` | Bearer (rider) | Fare + duration estimate; accepts optional `vehicle_type` |
 | POST | `/trips/request` | Bearer (rider) | Request a ride; accepts optional `vehicle_type` (go/x/xl) |
 | GET | `/trips/history` | Bearer | Paginated trip history |
-| GET | `/trips/{id}` | Bearer | Trip details (participants only) |
+| GET | `/trips/{id}` | Bearer | Trip details (participants only); includes `ride_otp` for rider when status is `DRIVER_ASSIGNED` |
 | PATCH | `/trips/{id}/assign` | `X-Internal-Secret` | Internal — matching-service only |
-| PATCH | `/trips/{id}/start` | Bearer (driver) | Start trip |
+| PATCH | `/trips/{id}/start` | Bearer (driver) | Start trip; requires `{ "otp": "<4-digit code>" }` body — OTP shown to rider on `GET /trips/{id}` |
 | PATCH | `/trips/{id}/end` | Bearer (driver) | End trip; computes fare by vehicle category |
 | PATCH | `/trips/{id}/cancel` | Bearer | Cancel trip; restores driver to GEO pool |
 | POST | `/trips/{id}/rate` | Bearer | Rate counterpart (1–5 stars) |
@@ -319,13 +331,17 @@ curl -s -X POST $BASE/drivers/trips/$TRIP_ID/respond \
   -H "Content-Type: application/json" \
   -d '{"accept":true}' | jq .
 
-curl -s $BASE/trips/$TRIP_ID \
-  -H "Authorization: Bearer $RIDER_TOKEN" | jq '{status,driver_id}'
-# → status should be DRIVER_ASSIGNED
+TRIP_DETAILS=$(curl -s $BASE/trips/$TRIP_ID \
+  -H "Authorization: Bearer $RIDER_TOKEN")
+echo $TRIP_DETAILS | jq '{status,driver_id,ride_otp}'
+# → status should be DRIVER_ASSIGNED; ride_otp is the 4-digit code the rider tells the driver
+RIDE_OTP=$(echo $TRIP_DETAILS | jq -r '.ride_otp')
 
-# 6. Driver starts and ends the trip
+# 6. Driver starts and ends the trip (OTP required to start)
 curl -s -X PATCH $BASE/trips/$TRIP_ID/start \
-  -H "Authorization: Bearer $DRIVER_TOKEN" | jq .status
+  -H "Authorization: Bearer $DRIVER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"otp\":\"$RIDE_OTP\"}" | jq .status
 
 curl -s -X PATCH $BASE/trips/$TRIP_ID/end \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
@@ -484,8 +500,10 @@ For local testing use `ngrok http 8000` to expose a public HTTPS URL.
 ### Trip
 
 ```
-REQUESTED ──► DRIVER_ASSIGNED ──► STARTED ──► COMPLETED
-    │               │                              └─ payment created, rating unlocked
+REQUESTED ──► DRIVER_ASSIGNED ──────────────────────────────► STARTED ──► COMPLETED
+    │               │            driver submits ride OTP           │           └─ payment created, rating unlocked
+    │               │            (4-digit, shown to rider in       └── /end
+    │               │             GET /trips/{id} response)
     │               └── /cancel ──► CANCELLED
     │                              └─ driver restored to GEO pool
     └── auto-cancel after 10 min (no driver found) ──► CANCELLED

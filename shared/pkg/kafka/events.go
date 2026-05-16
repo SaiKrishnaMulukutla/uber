@@ -34,6 +34,7 @@ type RideOfferedEvent struct {
 type DriverAssignedEvent struct {
 	TripID   string `json:"trip_id"`
 	DriverID string `json:"driver_id"`
+	RiderID  string `json:"rider_id,omitempty"`
 }
 
 // TripCompletedEvent is published to trip.completed.
