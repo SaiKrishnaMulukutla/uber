@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 Start Trip \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
+    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 **Get Trip Details (rider sees ride_otp)** \u2192 **Start Trip (driver submits OTP)** \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -77,6 +77,12 @@
       "key": "driverOTP",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "ride_otp",
+      "value": "",
+      "type": "string",
+      "description": "4-digit ride confirmation OTP shown to the rider once a driver is assigned. Auto-captured from GET /trips/{id}. Driver must submit this to start the trip."
     }
   ],
   "item": [
@@ -1098,14 +1104,14 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED"
+            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED\n\n**Ride OTP:** When the caller is the rider and status is `DRIVER_ASSIGNED`, the response includes `ride_otp` \u2014 a 4-digit code the rider shares verbally with the driver. The driver must submit this OTP when calling Start Trip. The test script auto-captures it into `ride_otp`."
           },
           "response": [
             {
-              "name": "200 OK \u2014 DRIVER_ASSIGNED",
+              "name": "200 OK \u2014 DRIVER_ASSIGNED (with ride OTP)",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"fare\": 0,\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
+              "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"ride_otp\": \"4823\",\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
             },
             {
               "name": "404 Not Found",
@@ -1120,10 +1126,15 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
                   "pm.test('Trip fields present', () => {",
-                  "  const body = pm.response.json();",
                   "  pm.expect(body).to.include.all.keys('id','rider_id','pickup_lat','pickup_lng','drop_lat','drop_lng','status','created_at');",
-                  "});"
+                  "});",
+                  "if (body.ride_otp) {",
+                  "  pm.collectionVariables.set('ride_otp', body.ride_otp);",
+                  "  pm.test('Ride OTP captured', () => pm.expect(body.ride_otp).to.match(/^\\d{4}$/));",
+                  "  console.log('ride_otp:', body.ride_otp);",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -1185,8 +1196,21 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{driver_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{ride_otp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/start",
               "host": [
@@ -1198,7 +1222,7 @@
                 "start"
               ]
             },
-            "description": "Move trip to STARTED state. Only the assigned driver can call this.\n\nPrerequisite: Trip must be in DRIVER_ASSIGNED status."
+            "description": "Move trip to STARTED state. Only the assigned driver can call this.\n\n**OTP required:** The rider sees a 4-digit `ride_otp` in `GET /trips/{id}` (only while status is `DRIVER_ASSIGNED`). The driver must submit it here. The `ride_otp` variable is auto-populated by the Get Trip Details test script.\n\n**Errors:**\n- `400 otp is required` — body missing `otp` field\n- `400 invalid OTP` — wrong code\n- `400 ride OTP not found or expired` — OTP expired (2hr TTL) or trip already started\n- `403` — caller is not the assigned driver\n\nPrerequisite: Trip must be in DRIVER_ASSIGNED status."
           },
           "response": [
             {
@@ -1206,6 +1230,30 @@
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"status\": \"STARTED\",\n  \"started_at\": \"2026-03-08T10:05:00Z\"\n}"
+            },
+            {
+              "name": "400 Missing OTP",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"otp is required\" }"
+            },
+            {
+              "name": "400 Invalid OTP",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"invalid OTP\" }"
+            },
+            {
+              "name": "400 OTP Expired",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"ride OTP not found or expired \u2014 ask the rider to refresh their app\" }"
+            },
+            {
+              "name": "403 Not Assigned Driver",
+              "status": "Forbidden",
+              "code": 403,
+              "body": "{ \"error\": \"only drivers can start trips\" }"
             }
           ],
           "event": [

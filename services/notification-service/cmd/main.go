@@ -88,7 +88,17 @@ func main() {
 			return err
 		}
 		log.Printf("[notifications] driver.assigned: trip=%s driver=%s", ev.TripID, ev.DriverID)
-		return repo.Create(ctx, ev.DriverID, "driver_assigned", "New Trip Assigned", fmt.Sprintf("You have been assigned to trip %s.", ev.TripID), ev.TripID+":"+ev.DriverID+":driver_assigned")
+		if err := repo.Create(ctx, ev.DriverID, "driver_assigned", "New Trip Assigned",
+			fmt.Sprintf("You have been assigned to trip %s.", ev.TripID),
+			ev.TripID+":"+ev.DriverID+":driver_assigned"); err != nil {
+			return err
+		}
+		if ev.RiderID != "" {
+			return repo.Create(ctx, ev.RiderID, "driver_assigned", "Driver On the Way!",
+				"Your driver has been assigned. Open the app to see your ride OTP.",
+				ev.TripID+":"+ev.RiderID+":driver_assigned")
+		}
+		return nil
 	})
 
 	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "notif-trip-completed", func(data []byte) error {

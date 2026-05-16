@@ -20,7 +20,7 @@ type TripService interface {
 	Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByID(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	Start(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	Start(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error)
 	End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
 	Cancel(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRider(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
@@ -30,6 +30,7 @@ type TripService interface {
 	PushLocation(ctx context.Context, tripID, driverID string, lat, lng float64) error
 	GetSurge(ctx context.Context) float64
 	SetSurge(ctx context.Context, multiplier float64) error
+	GetRideOTP(ctx context.Context, tripID string) (string, error)
 }
 
 type tripService struct {
@@ -108,7 +109,7 @@ func (s *tripService) AssignDriver(ctx context.Context, tripID, driverID string)
 	return s.repo.FindByID(ctx, tripID)
 }
 
-func (s *tripService) Start(ctx context.Context, tripID, callerID string) (*model.Trip, error) {
+func (s *tripService) Start(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error) {
 	trip, err := s.repo.FindByID(ctx, tripID)
 	if err != nil {
 		return nil, err
@@ -116,11 +117,25 @@ func (s *tripService) Start(ctx context.Context, tripID, callerID string) (*mode
 	if trip.DriverID == nil || *trip.DriverID != callerID {
 		return nil, errors.New("you are not the assigned driver for this trip")
 	}
+
+	storedOTP, err := s.redis.GetTripOTP(ctx, tripID)
+	if err != nil {
+		return nil, errors.New("ride OTP not found or expired — ask the rider to refresh their app")
+	}
+	if storedOTP != otp {
+		return nil, errors.New("invalid OTP")
+	}
+
 	now := time.Now()
 	if err := s.repo.StartTrip(ctx, tripID, now); err != nil {
 		return nil, err
 	}
+	s.redis.DeleteTripOTP(ctx, tripID)
 	return s.repo.FindByID(ctx, tripID)
+}
+
+func (s *tripService) GetRideOTP(ctx context.Context, tripID string) (string, error) {
+	return s.redis.GetTripOTP(ctx, tripID)
 }
 
 func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error) {

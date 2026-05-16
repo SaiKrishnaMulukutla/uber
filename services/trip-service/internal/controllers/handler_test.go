@@ -22,14 +22,15 @@ type mockTripService struct {
 	RequestFn      func(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error)
 	GetByIDFn      func(ctx context.Context, id string) (*model.Trip, error)
 	AssignDriverFn func(ctx context.Context, tripID, driverID string) (*model.Trip, error)
-	StartFn        func(ctx context.Context, tripID, callerID string) (*model.Trip, error)
+	StartFn        func(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error)
 	EndFn          func(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error)
 	CancelFn       func(ctx context.Context, tripID, callerID, reason string) (*model.Trip, error)
 	ListByRiderFn  func(ctx context.Context, riderID string, limit, offset int) (*model.HistoryResponse, error)
 	ListByDriverFn func(ctx context.Context, driverID string, limit, offset int) (*model.HistoryResponse, error)
-	EstimateFn      func(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse
-	RateFn          func(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
-	PushLocationFn  func(ctx context.Context, tripID, driverID string, lat, lng float64) error
+	EstimateFn     func(ctx context.Context, pickupLat, pickupLng, dropLat, dropLng float64, vehicleType string) *model.EstimateResponse
+	RateFn         func(ctx context.Context, tripID, raterID, raterRole string, req model.RateRequest) (*model.Rating, error)
+	PushLocationFn func(ctx context.Context, tripID, driverID string, lat, lng float64) error
+	GetRideOTPFn   func(ctx context.Context, tripID string) (string, error)
 }
 
 func (m *mockTripService) Request(ctx context.Context, riderID, riderEmail, riderPhone string, req model.TripRequest) (*model.Trip, error) {
@@ -41,8 +42,14 @@ func (m *mockTripService) GetByID(ctx context.Context, id string) (*model.Trip, 
 func (m *mockTripService) AssignDriver(ctx context.Context, tripID, driverID string) (*model.Trip, error) {
 	return m.AssignDriverFn(ctx, tripID, driverID)
 }
-func (m *mockTripService) Start(ctx context.Context, tripID, callerID string) (*model.Trip, error) {
-	return m.StartFn(ctx, tripID, callerID)
+func (m *mockTripService) Start(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error) {
+	return m.StartFn(ctx, tripID, callerID, otp)
+}
+func (m *mockTripService) GetRideOTP(ctx context.Context, tripID string) (string, error) {
+	if m.GetRideOTPFn != nil {
+		return m.GetRideOTPFn(ctx, tripID)
+	}
+	return "", nil
 }
 func (m *mockTripService) End(ctx context.Context, tripID, callerID string, distKm *float64) (*model.Trip, error) {
 	return m.EndFn(ctx, tripID, callerID, distKm)
@@ -131,7 +138,7 @@ func TestRequest_RequiresRiderRole(t *testing.T) {
 
 func TestStart_RequiresDriverRole(t *testing.T) {
 	mock := &mockTripService{
-		StartFn: func(_ context.Context, tripID, callerID string) (*model.Trip, error) {
+		StartFn: func(_ context.Context, tripID, callerID, otp string) (*model.Trip, error) {
 			return &model.Trip{ID: tripID, Status: "STARTED"}, nil
 		},
 	}
