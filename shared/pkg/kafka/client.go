@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -33,9 +35,26 @@ type Client struct {
 	writers   sync.Map // topic -> *kafkago.Writer
 }
 
+// buildTLSConfig returns a TLS config. If KAFKA_CA_CERT (base64-encoded PEM)
+// is set, the cert is added to the pool so self-signed broker CAs (e.g. Aiven)
+// are accepted without disabling verification entirely.
+func buildTLSConfig() *tls.Config {
+	cfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if b64 := os.Getenv("KAFKA_CA_CERT"); b64 != "" {
+		pem, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			log.Fatalf("[kafka] invalid KAFKA_CA_CERT (base64 decode): %v", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			log.Fatalf("[kafka] KAFKA_CA_CERT contains no valid PEM certificates")
+		}
+		cfg.RootCAs = pool
+	}
+	return cfg
+}
+
 // NewClient returns a Kafka client. If KAFKA_USERNAME and KAFKA_PASSWORD env
-// vars are set it automatically uses SASL SCRAM-SHA-256 over TLS (Redpanda /
-// Upstash / Confluent). Otherwise it connects plainly for local dev.
 func NewClient(brokers []string) *Client {
 	username := os.Getenv("KAFKA_USERNAME")
 	password := os.Getenv("KAFKA_PASSWORD")
@@ -44,7 +63,7 @@ func NewClient(brokers []string) *Client {
 		if err != nil {
 			log.Fatalf("[kafka] SASL mechanism init failed: %v", err)
 		}
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+		tlsCfg := buildTLSConfig()
 		return &Client{
 			brokers: brokers,
 			dialer: &kafkago.Dialer{
