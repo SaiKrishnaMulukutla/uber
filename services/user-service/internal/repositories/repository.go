@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -14,6 +15,7 @@ type UserRepository interface {
 	Create(ctx context.Context, id, name, email, phone, hash string) error
 	FindByEmail(ctx context.Context, email string) (*model.User, string, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
+	Update(ctx context.Context, id, name, phone string) (*model.User, error)
 	UpdateRating(ctx context.Context, userID string, score int) error
 }
 
@@ -63,6 +65,22 @@ func (r *pgUserRepository) FindByID(ctx context.Context, id string) (*model.User
 		Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.Rating, &u.RatingCount, &u.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	return &u, nil
+}
+
+func (r *pgUserRepository) Update(ctx context.Context, id, name, phone string) (*model.User, error) {
+	var u model.User
+	err := r.db.QueryRow(ctx,
+		`UPDATE users SET
+		   name  = COALESCE(NULLIF($1, ''), name),
+		   phone = COALESCE(NULLIF($2, ''), phone)
+		 WHERE id = $3
+		 RETURNING id, name, email, phone, rating, rating_count, created_at`,
+		name, phone, id).
+		Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.Rating, &u.RatingCount, &u.CreatedAt)
+	if err != nil {
+		return nil, errors.New("user not found")
 	}
 	return &u, nil
 }

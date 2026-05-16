@@ -68,3 +68,10 @@ type LocationUpdate struct {
 type StatusUpdate struct {
 	Status string `json:"status"`
 }
+
+type UpdateRequest struct {
+	Name         string `json:"name"`
+	Phone        string `json:"phone"`
+	VehicleType  string `json:"vehicle_type"`
+	LicensePlate string `json:"license_plate"`
+}
