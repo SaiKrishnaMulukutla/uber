@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "Uber Ride-Hailing API",
-    "description": "Complete API collection for the Go ride-hailing microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. Set `base_url` to `http://localhost:8000` (pre-configured; Render gateway pre-set)\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 **Get Trip Details (rider sees ride_otp)** \u2192 **Start Trip (driver submits OTP)** \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000\n\n## Email Notifications\nIf `EMAIL_*` is configured in `.env`, HTML emails are sent to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
+    "name": "RideGo API",
+    "description": "Complete API collection for the RideGo Go microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. `base_url` is pre-set to the Render gateway. For local dev, copy `local_base_url` into `base_url`.\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Login (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 **Get Trip Details (rider sees ride_otp)** \u2192 **Start Trip (driver submits OTP)** \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 ridego.events {payment.completed} \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000. Kafka: 5 topics on Aiven (ridego.events multiplexes trip.cancelled, rating.submitted, payment.completed).\n\n## Email Notifications\nBrevo API sends HTML emails to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -1413,7 +1413,7 @@
                 "rate"
               ]
             },
-            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `rating.submitted` \u2192 Driver/User service updates average rating."
+            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `ridego.events {type:rating.submitted}` \u2192 Driver/User service updates average rating."
           },
           "response": [
             {
@@ -1474,7 +1474,7 @@
                 "cancel"
               ]
             },
-            "description": "Cancel a trip (REQUESTED or DRIVER_ASSIGNED). Restores driver to Redis GEO pool and publishes `trip.cancelled` event."
+            "description": "Cancel a trip (REQUESTED or DRIVER_ASSIGNED). Restores driver to Redis GEO pool and publishes `ridego.events {type:trip.cancelled}`."
           },
           "response": [
             {
@@ -1674,7 +1674,7 @@
                 "{{payment_id}}"
               ]
             },
-            "description": "Opens the Uber-branded payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** \u2192 Cash tab \u2014 waiting state (no rider action). Shows steps: hand cash \u2192 driver confirms \u2192 page updates via WebSocket.\n- **upi** \u2192 UPI tab \u2014 shows Razorpay-hosted QR image (scan with any UPI app) + VPA input. QR scan fires  webhook; VPA collect fires  webhook. Page updates via WebSocket when either succeeds \u2014 no countdown timer.\n- **card** \u2192 Card tab \u2014 Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in  as .\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page \u2192 sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls  (Request 3 below)\n4. WebSocket pushes completion \u2192 page shows success automatically"
+            "description": "Opens the RideGo payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** \u2192 Cash tab \u2014 waiting state (no rider action). Shows steps: hand cash \u2192 driver confirms \u2192 page updates via WebSocket.\n- **upi** \u2192 UPI tab \u2014 shows Razorpay-hosted QR image (scan with any UPI app) + VPA input. QR scan fires  webhook; VPA collect fires  webhook. Page updates via WebSocket when either succeeds \u2014 no countdown timer.\n- **card** \u2192 Card tab \u2014 Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in  as .\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page \u2192 sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls  (Request 3 below)\n4. WebSocket pushes completion \u2192 page shows success automatically"
           },
           "response": []
         },
@@ -1699,7 +1699,7 @@
                 "confirm-cash"
               ]
             },
-            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM \u2192 COMPLETED`\n\nPublishes `payment.completed` to Kafka \u2192 triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
+            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM \u2192 COMPLETED`\n\nPublishes `ridego.events {type:payment.completed}` \u2192 triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
           },
           "response": [
             {
@@ -1764,7 +1764,7 @@
                 "simulate-success"
               ]
             },
-            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `payment.completed` to Kafka \u2192 triggers in-app notification and email to rider."
+            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `ridego.events {type:payment.completed}` \u2192 triggers in-app notification and email to rider."
           },
           "response": [
             {
@@ -1889,7 +1889,7 @@
                 "verify"
               ]
             },
-            "description": "Verify the Razorpay payment signature returned by the Checkout modal. The server validates `HMAC-SHA256(provider_order_id + '|' + provider_payment_id)` against `RAZORPAY_KEY_SECRET`.\n\nOn success, payment moves to COMPLETED and `payment.completed` is published to Kafka (triggers email notification)."
+            "description": "Verify the Razorpay payment signature returned by the Checkout modal. The server validates `HMAC-SHA256(provider_order_id + '|' + provider_payment_id)` against `RAZORPAY_KEY_SECRET`.\n\nOn success, payment moves to COMPLETED and `ridego.events {type:payment.completed}` is published (triggers email notification)."
           },
           "response": [
             {
