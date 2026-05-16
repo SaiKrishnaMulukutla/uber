@@ -1,10 +1,3 @@
-databases:
-  - name: uber-db
-    databaseName: uber
-    user: uber
-    plan: free
-    region: singapore
-
 services:
   # ── API Gateway ────────────────────────────────────────────────────────────
   - type: web
@@ -38,9 +31,7 @@ services:
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: uber-db
-          property: connectionString
+        sync: false
       - key: REDIS_ADDR
         sync: false
       - key: KAFKA_BROKERS
@@ -50,6 +41,8 @@ services:
       - key: KAFKA_PASSWORD
         sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: BREVO_API_KEY
         sync: false
       - key: EMAIL_HOST
         sync: false
@@ -71,9 +64,7 @@ services:
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: uber-db
-          property: connectionString
+        sync: false
       - key: REDIS_ADDR
         sync: false
       - key: KAFKA_BROKERS
@@ -83,6 +74,8 @@ services:
       - key: KAFKA_PASSWORD
         sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: BREVO_API_KEY
         sync: false
       - key: EMAIL_HOST
         sync: false
@@ -104,9 +97,7 @@ services:
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: uber-db
-          property: connectionString
+        sync: false
       - key: REDIS_ADDR
         sync: false
       - key: KAFKA_BROKERS
@@ -154,9 +145,7 @@ services:
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: uber-db
-          property: connectionString
+        sync: false
       - key: KAFKA_BROKERS
         sync: false
       - key: KAFKA_USERNAME
@@ -164,6 +153,8 @@ services:
       - key: KAFKA_PASSWORD
         sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: BREVO_API_KEY
         sync: false
       - key: EMAIL_HOST
         sync: false
@@ -185,9 +176,7 @@ services:
     autoDeploy: false
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: uber-db
-          property: connectionString
+        sync: false
       - key: KAFKA_BROKERS
         sync: false
       - key: KAFKA_USERNAME
