@@ -245,8 +245,10 @@ func (s *tripService) Cancel(ctx context.Context, tripID, callerID, reason strin
 		Reason:      reason,
 		CancelledAt: now.Format(time.RFC3339),
 	}
-	if err := s.kafka.Publish(ctx, kafka.TopicTripCancelled, tripID, ev); err != nil {
-		log.Printf("[trip-service] failed to publish trip.cancelled: %v", err)
+	if env, envErr := kafka.NewEnvelope(kafka.EventTypeTripCancelled, ev); envErr == nil {
+		if err := s.kafka.Publish(ctx, kafka.TopicRideGoEvents, tripID, env); err != nil {
+			log.Printf("[trip-service] failed to publish trip.cancelled: %v", err)
+		}
 	}
 
 	return s.repo.FindByID(ctx, tripID)
@@ -328,8 +330,10 @@ func (s *tripService) Rate(ctx context.Context, tripID, raterID, raterRole strin
 			Score:     req.Score,
 			Comment:   req.Comment,
 		}
-		if err := s.kafka.Publish(ctx, kafka.TopicRatingSubmitted, tripID, ev); err != nil {
-			log.Printf("[trip-service] failed to publish rating.submitted: %v", err)
+		if env, envErr := kafka.NewEnvelope(kafka.EventTypeRatingSubmitted, ev); envErr == nil {
+			if err := s.kafka.Publish(ctx, kafka.TopicRideGoEvents, tripID, env); err != nil {
+				log.Printf("[trip-service] failed to publish rating.submitted: %v", err)
+			}
 		}
 	}
 

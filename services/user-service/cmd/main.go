@@ -45,7 +45,7 @@ func main() {
 	defer redisClient.Close()
 
 	kafkaClient := kafka.NewClient(cfg.KafkaBrokers)
-	if err := kafkaClient.EnsureTopics(ctx, kafka.TopicRatingSubmitted); err != nil {
+	if err := kafkaClient.EnsureTopics(ctx, kafka.TopicRideGoEvents); err != nil {
 		log.Fatal(err)
 	}
 
@@ -65,9 +65,16 @@ func main() {
 	svc := service.NewService(repo, otpClient, m)
 
 	// Kafka consumers
-	kafkaClient.Subscribe(ctx, kafka.TopicRatingSubmitted, "user-rating-update", func(data []byte) error {
+	kafkaClient.Subscribe(ctx, kafka.TopicRideGoEvents, "user-ridego-events", func(data []byte) error {
+		var env kafka.EventEnvelope
+		if err := json.Unmarshal(data, &env); err != nil {
+			return err
+		}
+		if env.Type != kafka.EventTypeRatingSubmitted {
+			return nil
+		}
 		var ev kafka.RatingSubmittedEvent
-		if err := json.Unmarshal(data, &ev); err != nil {
+		if err := json.Unmarshal(env.Payload, &ev); err != nil {
 			return err
 		}
 		if ev.RateeRole != "rider" {

@@ -268,7 +268,9 @@ func (s *paymentService) publishCompleted(ctx context.Context, p *model.Payment)
 		Status:      "COMPLETED",
 		CompletedAt: p.CompletedAt.Format(time.RFC3339),
 	}
-	if err := s.kafka.Publish(ctx, kafka.TopicPaymentCompleted, p.TripID, ev); err != nil {
-		log.Printf("[payments] failed to publish payment.completed: %v", err)
+	if env, envErr := kafka.NewEnvelope(kafka.EventTypePaymentCompleted, ev); envErr == nil {
+		if err := s.kafka.Publish(ctx, kafka.TopicRideGoEvents, p.TripID, env); err != nil {
+			log.Printf("[payments] failed to publish payment.completed: %v", err)
+		}
 	}
 }
