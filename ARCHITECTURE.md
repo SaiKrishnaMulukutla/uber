@@ -174,7 +174,7 @@ Ask: "Could I copy this package into a completely unrelated Go project and use i
 |-------|-------------|-------------|
 | `ride.requested` | trip-service | matching-service |
 | `ride.offered` | matching-service | notification-service |
-| `driver.assigned` | matching-service | trip-service, driver-service, notification-service |
+| `driver.assigned` | driver-service (accept) — includes `rider_id` | trip-service (assign driver + generate ride OTP in Redis), driver-service (mark busy), notification-service (notify driver + rider) |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
 | `trip.cancelled` | trip-service | driver-service, notification-service |
 | `rating.submitted` | trip-service | driver-service, user-service, notification-service |

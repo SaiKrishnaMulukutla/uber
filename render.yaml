@@ -14,6 +14,7 @@ services:
     dockerContext: ./infra
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: USER_SERVICE_URL
         sync: false
@@ -34,6 +35,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -66,6 +68,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -98,6 +101,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -126,6 +130,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: REDIS_ADDR
         sync: false
@@ -146,6 +151,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -176,6 +182,7 @@ services:
     dockerContext: .
     plan: free
     region: singapore
+    autoDeploy: false
     envVars:
       - key: DATABASE_URL
         fromDatabase:

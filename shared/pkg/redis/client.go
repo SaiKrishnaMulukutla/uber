@@ -200,6 +200,23 @@ func (c *Client) SetSurge(ctx context.Context, multiplier float64) error {
 	return c.rdb.Set(ctx, "surge:multiplier", strconv.FormatFloat(multiplier, 'f', 2, 64), 0).Err()
 }
 
+const tripOTPTTL = 2 * time.Hour
+
+// SetTripOTP stores the ride confirmation OTP for a trip, keyed by tripID.
+func (c *Client) SetTripOTP(ctx context.Context, tripID, otp string) error {
+	return c.rdb.Set(ctx, "trip:otp:"+tripID, otp, tripOTPTTL).Err()
+}
+
+// GetTripOTP retrieves the ride confirmation OTP for a trip.
+func (c *Client) GetTripOTP(ctx context.Context, tripID string) (string, error) {
+	return c.rdb.Get(ctx, "trip:otp:"+tripID).Result()
+}
+
+// DeleteTripOTP removes the ride confirmation OTP after it has been consumed.
+func (c *Client) DeleteTripOTP(ctx context.Context, tripID string) error {
+	return c.rdb.Del(ctx, "trip:otp:"+tripID).Err()
+}
+
 // Ping checks the Redis connection.
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
