@@ -69,7 +69,7 @@ func (c *Client) SendOTP(ctx context.Context, email string) error {
 	c.rdb.Del(ctx, "attempts:"+email)
 
 	if c.mailer != nil {
-		if err := c.mailer.Send(email, "Your Uber Login Code", buildOTPEmail(otp)); err != nil {
+		if err := c.mailer.Send(email, "Your RideGo Login Code", mailer.LoginOTP(otp)); err != nil {
 			fmt.Printf("[otp] warn: email send failed for %s: %v\n", email, err)
 		}
 	}
@@ -127,37 +127,3 @@ func hashOTP(otp string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func buildOTPEmail(otp string) string {
-	content := fmt.Sprintf(`
-<p style="margin:0 0 8px;font-size:22px;font-weight:700;color:#000000;">Your login verification code</p>
-<p style="margin:0 0 28px;font-size:15px;color:#545454;line-height:1.6;">
-  Use the code below to complete your sign-in. It expires in <strong>5 minutes</strong> and can only be used once.
-</p>
-<table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
-  <tr><td style="background-color:#f6f6f6;border-radius:4px;padding:20px 36px;text-align:center;">
-    <span style="font-size:40px;font-weight:700;letter-spacing:14px;color:#000000;">%s</span>
-  </td></tr>
-</table>
-<p style="margin:0;font-size:13px;color:#888888;">
-  If you didn't request this code, you can safely ignore this email.
-</p>`, otp)
-
-	return fmt.Sprintf(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/></head>
-<body style="margin:0;padding:0;background-color:#f6f6f6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
-  <table width="100%%" cellpadding="0" cellspacing="0" border="0" style="padding:40px 0;">
-    <tr><td align="center">
-      <table width="520" cellpadding="0" cellspacing="0" border="0"
-             style="background:#ffffff;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <tr><td style="background:#000000;padding:28px 40px;">
-          <span style="color:#ffffff;font-size:26px;font-weight:700;">Uber</span>
-        </td></tr>
-        <tr><td style="padding:40px 40px 28px;">%s</td></tr>
-        <tr><td style="padding:24px 40px 32px;text-align:center;">
-          <p style="margin:0;font-size:12px;color:#aaaaaa;">This is an automated message. Please do not reply.</p>
-          <p style="margin:8px 0 0;font-size:12px;color:#555555;">Created with &#10084;&#65039; by Mulukutla Sai Krishna</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`, content)
-}
