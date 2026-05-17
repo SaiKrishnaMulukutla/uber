@@ -24,6 +24,8 @@ type UserServicer interface {
 	Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
 	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
+	ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error
+	ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error
 }
 
 type Handler struct{ svc UserServicer }
@@ -37,6 +39,8 @@ func (h *Handler) Routes() chi.Router {
 	r.Post("/verify-register", h.VerifyRegister)
 	r.Post("/login", h.Login)
 	r.Post("/refresh", h.Refresh)
+	r.Post("/forgot-password", h.ForgotPassword)
+	r.Post("/reset-password", h.ResetPassword)
 
 	r.Group(func(r chi.Router) {
 		r.Use(jwt.RequireAuth)
@@ -188,6 +192,52 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, u)
+}
+
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return
+	}
+	if err := h.svc.ForgotPassword(r.Context(), req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
+}
+
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return
+	}
+	if !sixDigits.MatchString(req.OTP) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
+		return
+	}
+	if !validation.ValidatePassword(req.NewPassword) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		return
+	}
+	if err := h.svc.ResetPassword(r.Context(), req); err != nil {
+		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

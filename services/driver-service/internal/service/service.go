@@ -48,6 +48,8 @@ type DriverService interface {
 	GetNearby(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
 	RespondToOffer(ctx context.Context, driverID, tripID string, accept bool) error
 	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
+	ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error
+	ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error
 }
 
 type driverService struct {
@@ -178,6 +180,34 @@ func (s *driverService) Refresh(ctx context.Context, refreshToken string) (*mode
 
 func (s *driverService) GetByID(ctx context.Context, id string) (*model.Driver, error) {
 	return s.repo.FindByID(ctx, id)
+}
+
+// ForgotPassword verifies the email exists and sends an OTP for password reset.
+func (s *driverService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	exists, err := s.repo.EmailExists(ctx, req.Email)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("no account found with that email")
+	}
+	return s.otp.SendOTP(ctx, req.Email)
+}
+
+// ResetPassword verifies the OTP then replaces the password hash.
+func (s *driverService) ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error {
+	if err := s.otp.VerifyOTP(ctx, req.Email, req.OTP); err != nil {
+		return err
+	}
+	d, _, err := s.repo.FindByEmail(ctx, req.Email)
+	if err != nil {
+		return errors.New("driver not found")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePassword(ctx, d.ID, string(hash))
 }
 
 func (s *driverService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error) {
