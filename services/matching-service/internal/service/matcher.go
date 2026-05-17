@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	offerTTL     = 15 * time.Second
-	offerLockTTL = 20 * time.Second // slightly longer than offerTTL to cover processing time
+	offerTTL     = 60 * time.Second
+	offerLockTTL = 65 * time.Second // slightly longer than offerTTL to cover processing time
 )
 
 type geoClient interface {
@@ -66,7 +66,7 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 
 	const (
 		maxRetries = 5
-		retryDelay = 15 * time.Second
+		retryDelay = 60 * time.Second
 	)
 
 	allDrivers, err := geo.GetNearbyDrivers(ctx, ev.Pickup.Lat, ev.Pickup.Lng, 5.0, 10)
