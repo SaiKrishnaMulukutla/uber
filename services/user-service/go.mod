@@ -7,6 +7,7 @@ require (
 	github.com/go-chi/cors v1.2.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.5.1
+	github.com/redis/go-redis/v9 v9.4.0
 	golang.org/x/crypto v0.18.0
 	uber/shared v0.0.0
 )
@@ -20,7 +21,6 @@ require (
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/klauspost/compress v1.15.9 // indirect
 	github.com/pierrec/lz4/v4 v4.1.15 // indirect
-	github.com/redis/go-redis/v9 v9.4.0 // indirect
 	github.com/segmentio/kafka-go v0.4.47 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect

@@ -25,7 +25,7 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-type VerifyLoginRequest struct {
+type VerifyRegisterRequest struct {
 	Email string `json:"email"`
 	OTP   string `json:"otp"`
 }

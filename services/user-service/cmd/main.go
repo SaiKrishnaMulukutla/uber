@@ -62,7 +62,7 @@ func main() {
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)
-	svc := service.NewService(repo, otpClient, m)
+	svc := service.NewService(repo, otpClient, redisClient.RDB(), m)
 
 	// Kafka consumers
 	kafkaClient.Subscribe(ctx, kafka.TopicRideGoEvents, "user-ridego-events", func(data []byte) error {
