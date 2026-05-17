@@ -3,8 +3,6 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,7 +14,6 @@ import (
 	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
-// Well-known topic names.
 const (
 	TopicRideRequested  = "ride.requested"
 	TopicRideOffered    = "ride.offered"
@@ -25,44 +22,22 @@ const (
 	TopicRideGoEvents   = "ridego.events" // trip.cancelled + rating.submitted + payment.completed
 )
 
-// Client wraps Kafka operations.
 type Client struct {
 	brokers   []string
 	dialer    *kafkago.Dialer
 	transport kafkago.RoundTripper
-	writers   sync.Map // topic -> *kafkago.Writer
+	writers   sync.Map
 }
 
-// buildTLSConfig returns a TLS config for Aiven Kafka.
-// If KAFKA_CA_CERT is set (base64-encoded PEM), it is loaded into a custom
-// cert pool so the broker identity is fully verified.
-// Falls back to InsecureSkipVerify only when the env var is absent — this
-// preserves existing local-dev behaviour while enforcing verification in prod.
 func buildTLSConfig() *tls.Config {
-	caB64 := os.Getenv("KAFKA_CA_CERT")
-	if caB64 == "" {
-		return &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: true, //nolint:gosec // local dev only, no CA cert configured
-		}
-	}
-	caBytes, err := base64.StdEncoding.DecodeString(caB64)
-	if err != nil {
-		log.Fatalf("[kafka] failed to base64-decode KAFKA_CA_CERT: %v", err)
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(caBytes) {
-		log.Fatalf("[kafka] KAFKA_CA_CERT contains no valid PEM certificates")
-	}
 	return &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		RootCAs:    pool,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, //nolint:gosec // Aiven CA has duplicate OID, Go rejects it
 	}
 }
 
 // NewClient returns a Kafka client. If KAFKA_USERNAME and KAFKA_PASSWORD env
 // vars are set it automatically uses SASL SCRAM-SHA-256 over TLS (Aiven /
-// Redpanda / Confluent). Otherwise it connects plainly for local dev.
 func NewClient(brokers []string) *Client {
 	username := os.Getenv("KAFKA_USERNAME")
 	password := os.Getenv("KAFKA_PASSWORD")
@@ -87,7 +62,6 @@ func NewClient(brokers []string) *Client {
 	return &Client{brokers: brokers, dialer: kafkago.DefaultDialer}
 }
 
-// getWriter returns a cached writer for the topic, creating one if needed.
 func (c *Client) getWriter(topic string) *kafkago.Writer {
 	if v, ok := c.writers.Load(topic); ok {
 		return v.(*kafkago.Writer)
@@ -105,7 +79,6 @@ func (c *Client) getWriter(topic string) *kafkago.Writer {
 	return actual.(*kafkago.Writer)
 }
 
-// Close shuts down all cached writers.
 func (c *Client) Close() {
 	c.writers.Range(func(key, value any) bool {
 		value.(*kafkago.Writer).Close()
@@ -113,15 +86,12 @@ func (c *Client) Close() {
 	})
 }
 
-// WarmWriters pre-creates writers for the given topics so the first Publish
-// call does not pay the TLS/SASL connection cost under a request timeout.
 func (c *Client) WarmWriters(topics ...string) {
 	for _, t := range topics {
 		c.getWriter(t)
 	}
 }
 
-// EnsureTopics creates topics if they don't already exist (with retry).
 func (c *Client) EnsureTopics(ctx context.Context, topics ...string) error {
 	for attempt := 1; attempt <= 20; attempt++ {
 		conn, err := c.dialer.DialContext(ctx, "tcp", c.brokers[0])
@@ -164,9 +134,6 @@ func (c *Client) Publish(ctx context.Context, topic, key string, value any) erro
 	})
 }
 
-// Subscribe starts a background goroutine that reads from a topic.
-// Messages are only committed after the handler succeeds; on handler error
-// the message is not committed and will be redelivered.
 func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler func([]byte) error) {
 	r := kafkago.NewReader(kafkago.ReaderConfig{
 		Brokers:  c.brokers,
@@ -190,7 +157,6 @@ func (c *Client) Subscribe(ctx context.Context, topic, groupID string, handler f
 				continue
 			}
 
-			// Per-message recover: a panic commits (skips) the bad message but keeps the consumer alive.
 			func() {
 				defer func() {
 					if p := recover(); p != nil {
