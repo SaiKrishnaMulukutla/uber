@@ -328,7 +328,7 @@ curl -s -X PATCH $BASE/drivers/$DRIVER_ID/location \
 TRIP=$(curl -s -X POST $BASE/trips/request \
   -H "Authorization: Bearer $RIDER_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"pickupLat":12.9716,"pickupLng":77.5946,"dropLat":12.9352,"dropLng":77.6245,"payment_method":"upi"}')
+  -d '{"pickup_lat":12.9716,"pickup_lng":77.5946,"drop_lat":12.9352,"drop_lng":77.6245,"payment_method":"upi"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
 # 5. Driver accepts the ride offer (within 15s window)
