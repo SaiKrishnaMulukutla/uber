@@ -147,6 +147,7 @@ services/{name}/
 | `pkg/env` | `Get(key, fallback)`, `GetInt(key, fallback)` | Nothing |
 | `pkg/validation` | ValidateEmail, Phone, Name, Password, Coordinates, DriverStatus, RatingScore | Service-specific validation rules |
 | `pkg/mailer` | `GmailMailer` (SMTP), `AsyncMailer` (worker-pool wrapper implementing `Mailer`) | Email templates specific to one service |
+| `pkg/httputil` | `WriteJSON(w, status, v)`, `ParsePagination(r, defaultLimit)` | Handler-specific logic |
 
 ### What MUST NEVER be in shared/
 
@@ -176,7 +177,7 @@ Ask: "Could I copy this package into a completely unrelated Go project and use i
 |-------|-------------|-------------|
 | `ride.requested` | trip-service | matching-service |
 | `ride.offered` | matching-service | notification-service |
-| `driver.assigned` | driver-service (accept) — includes `rider_id` | trip-service (assign driver + generate ride OTP in Redis), driver-service (mark busy), notification-service (notify driver + rider) |
+| `driver.assigned` | driver-service (accept) — includes `rider_id` | trip-service (`svc.AssignDriver()` — updates DB + generates ride OTP in Redis), driver-service (mark busy), notification-service (notify driver + rider) |
 | `trip.completed` | trip-service | payment-service, driver-service, notification-service |
 | `ridego.events` | trip-service (`trip.cancelled`, `rating.submitted`), payment-service (`payment.completed`) | matching-service, driver-service, user-service, notification-service |
 
