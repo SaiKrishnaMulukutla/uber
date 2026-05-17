@@ -217,6 +217,24 @@ func (c *Client) DeleteTripOTP(ctx context.Context, tripID string) error {
 	return c.rdb.Del(ctx, "trip:otp:"+tripID).Err()
 }
 
+const refreshTokenKeyPrefix = "rt:"
+
+// StoreRefreshToken persists a refresh token JTI so it can be validated and revoked.
+func (c *Client) StoreRefreshToken(ctx context.Context, jti string, ttl time.Duration) error {
+	return c.rdb.Set(ctx, refreshTokenKeyPrefix+jti, "1", ttl).Err()
+}
+
+// IsRefreshTokenValid returns true if the JTI is still present in the store.
+func (c *Client) IsRefreshTokenValid(ctx context.Context, jti string) bool {
+	n, err := c.rdb.Exists(ctx, refreshTokenKeyPrefix+jti).Result()
+	return err == nil && n == 1
+}
+
+// RevokeRefreshToken deletes the JTI, invalidating the token immediately.
+func (c *Client) RevokeRefreshToken(ctx context.Context, jti string) {
+	c.rdb.Del(ctx, refreshTokenKeyPrefix+jti)
+}
+
 // Ping checks the Redis connection.
 func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()

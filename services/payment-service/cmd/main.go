@@ -65,7 +65,7 @@ func main() {
 	repo := repositories.NewRepository(pool)
 	svc := service.NewService(repo, kafkaClient, prov, cfg.RazorpayKeyID, paymentHub, cfg.BaseURL)
 
-	// Kafka consumer: trip.completed → create payment
+	// Kafka consumer: trip.completed → create payment record
 	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "payment-trip-completed", func(data []byte) error {
 		var ev kafka.TripCompletedEvent
 		if err := json.Unmarshal(data, &ev); err != nil {

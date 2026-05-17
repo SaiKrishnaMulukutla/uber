@@ -157,7 +157,8 @@ func (s *tripService) End(ctx context.Context, tripID, callerID string, distKm *
 		km = *distKm
 	}
 
-	fare := calcFare(km, trip.VehicleType)
+	surge := s.redis.GetSurge(ctx)
+	fare := calcFare(km, trip.VehicleType) * surge
 	now := time.Now()
 
 	var durSec int64
