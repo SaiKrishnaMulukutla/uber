@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "RideGo API",
-    "description": "Complete API collection for the RideGo Go microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. `base_url` is pre-set to the Render gateway. For local dev, copy `local_base_url` into `base_url`.\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order — tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister → Verify Register (OTP) → Driver Online → Set Location → Request Trip → *(matching offers driver, driver accepts)* → **Get Trip Details (rider sees ride_otp)** → **Start Trip (driver submits OTP)** → Push Locations → End Trip → Rate → View Payment → View Notifications\n\n## Payment Methods\n- **cash** → driver confirms via POST /payments/{id}/confirm-cash → ridego.events {payment.completed} → WebSocket pushes success\n- **upi** → Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) → WebSocket pushes success\n- **card** → POST /payments/orders → Razorpay Checkout modal → POST /payments/verify → COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000. Kafka: 5 topics on Aiven (ridego.events multiplexes trip.cancelled, rating.submitted, payment.completed).\n\n## Email Notifications\nBrevo API sends HTML emails to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
+    "description": "Complete API collection for the RideGo Go microservices backend.\n\n## Setup\n1. Import this collection into Postman\n2. `base_url` is pre-set to the Render gateway. For local dev, copy `local_base_url` into `base_url`.\n3. Set `internal_secret` to the value of `INTERNAL_SECRET` in your `.env` (needed for the Assign Driver endpoint)\n4. Run requests in order \u2014 tokens, IDs, and payment_id are auto-captured by test scripts\n\n## Happy Path\nRegister \u2192 Verify Register (OTP) \u2192 Driver Online \u2192 Set Location \u2192 Request Trip \u2192 *(matching offers driver, driver accepts)* \u2192 **Get Trip Details (rider sees ride_otp)** \u2192 **Start Trip (driver submits OTP)** \u2192 Push Locations \u2192 End Trip \u2192 Rate \u2192 View Payment \u2192 View Notifications\n\n## Payment Methods\n- **cash** \u2192 driver confirms via POST /payments/{id}/confirm-cash \u2192 ridego.events {payment.completed} \u2192 WebSocket pushes success\n- **upi** \u2192 Razorpay QR Code (scan fires qr_code.credited webhook) + VPA collect (fires payment.captured webhook) \u2192 WebSocket pushes success\n- **card** \u2192 POST /payments/orders \u2192 Razorpay Checkout modal \u2192 POST /payments/verify \u2192 COMPLETED\n\n## Architecture\n7 microservices behind NGINX gateway on :8000. Kafka: 5 topics on Aiven (ridego.events multiplexes trip.cancelled, rating.submitted, payment.completed).\n\n## Email Notifications\nBrevo API sends HTML emails to the rider on:\n- Trip completion (fare summary)\n- Trip cancellation\n- Payment confirmation (amount + trip ID)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -19,7 +19,7 @@
     },
     {
       "key": "internal_secret",
-      "value": "",
+      "value": "cf2b485baf992c810e79ba4c6d79bd94daa21ecd0b57a54dbea1bd856e850731",
       "type": "string",
       "description": "Value of INTERNAL_SECRET env var (used for service-to-service endpoints)"
     },
@@ -103,7 +103,7 @@
                 "health"
               ]
             },
-            "description": "Health check served directly by NGINX — no backend involved. Confirms the gateway itself is running."
+            "description": "Health check served directly by NGINX \u2014 no backend involved. Confirms the gateway itself is running."
           },
           "response": [
             {
@@ -322,7 +322,7 @@
       "name": "Users (Rider)",
       "item": [
         {
-          "name": "Register Rider (Step 1 — send OTP)",
+          "name": "Register Rider (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -345,7 +345,7 @@
                 "register"
               ]
             },
-            "description": "Registration Step 1 — validates input and sends a 6-digit OTP to the rider’s email. Account is NOT yet created. Check email for the code, then call Verify Rider Registration."
+            "description": "Registration Step 1 \u2014 validates input and sends a 6-digit OTP to the rider\u2019s email. Account is NOT yet created. Check email for the code, then call Verify Rider Registration."
           },
           "response": [
             {
@@ -376,7 +376,7 @@
           "event": []
         },
         {
-          "name": "Verify Rider Registration (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Rider Registration (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -399,11 +399,11 @@
                 "verify-register"
               ]
             },
-            "description": "Registration Step 2 — verifies the OTP from email and creates the account, issuing access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
+            "description": "Registration Step 2 \u2014 verifies the OTP from email and creates the account, issuing access + refresh tokens. Set the `riderOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
-              "name": "201 Created — account created, tokens issued",
+              "name": "201 Created \u2014 account created, tokens issued",
               "status": "Created",
               "code": 201,
               "header": [
@@ -462,7 +462,7 @@
                 "login"
               ]
             },
-            "description": "Password-only login — validates credentials and returns access + refresh tokens immediately. No OTP required after initial registration."
+            "description": "Password-only login \u2014 validates credentials and returns access + refresh tokens immediately. No OTP required after initial registration."
           },
           "response": [
             {
@@ -513,35 +513,88 @@
           "name": "Forgot Password (Rider)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"sai@demo.com\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/forgot-password", "host": ["{{base_url}}"], "path": ["users", "forgot-password"] },
+            "url": {
+              "raw": "{{base_url}}/users/forgot-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "forgot-password"
+              ]
+            },
             "description": "Sends a 6-digit OTP to the rider's email. Check inbox, then run Reset Password (Rider) with the code."
           },
           "response": [
-            { "name": "202 OTP Sent", "status": "Accepted", "code": 202, "body": "{ \"message\": \"OTP sent to sai@demo.com\" }" },
-            { "name": "400 Email Not Found", "status": "Bad Request", "code": 400, "body": "{ \"error\": \"no account found with that email\" }" }
+            {
+              "name": "202 OTP Sent",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"message\": \"OTP sent to sai@demo.com\" }"
+            },
+            {
+              "name": "400 Email Not Found",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"no account found with that email\" }"
+            }
           ]
         },
         {
           "name": "Reset Password (Rider)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"otp\": \"{{riderOTP}}\",\n  \"new_password\": \"NewPass123!\"\n}"
             },
-            "url": { "raw": "{{base_url}}/users/reset-password", "host": ["{{base_url}}"], "path": ["users", "reset-password"] },
+            "url": {
+              "raw": "{{base_url}}/users/reset-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "reset-password"
+              ]
+            },
             "description": "Verifies the OTP from Forgot Password and sets the new password. Set `riderOTP` to the 6-digit code from your email before running."
           },
           "response": [
-            { "name": "200 Password Reset", "status": "OK", "code": 200, "body": "{ \"message\": \"password reset successfully\" }" },
-            { "name": "401 Invalid OTP", "status": "Unauthorized", "code": 401, "body": "{ \"error\": \"invalid OTP\" }" },
-            { "name": "429 Max Attempts", "status": "Too Many Requests", "code": 429, "body": "{ \"error\": \"max OTP attempts exceeded\" }" }
+            {
+              "name": "200 Password Reset",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"message\": \"password reset successfully\" }"
+            },
+            {
+              "name": "401 Invalid OTP",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{ \"error\": \"invalid OTP\" }"
+            },
+            {
+              "name": "429 Max Attempts",
+              "status": "Too Many Requests",
+              "code": 429,
+              "body": "{ \"error\": \"max OTP attempts exceeded\" }"
+            }
           ]
         },
         {
@@ -585,8 +638,12 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set('rider_token', body.access_token);",
-                  "pm.collectionVariables.set('rider_refresh_token', body.refresh_token);"
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('rider_token', body.access_token);",
+                  "  pm.collectionVariables.set('rider_refresh_token', body.refresh_token);",
+                  "  pm.test('Tokens rotated', () => pm.expect(body.refresh_token).to.be.a('string').and.not.empty);",
+                  "  console.log('rider tokens rotated via refresh');",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -657,7 +714,7 @@
       "name": "Drivers",
       "item": [
         {
-          "name": "Register Driver (Step 1 — send OTP)",
+          "name": "Register Driver (Step 1 \u2014 send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -680,7 +737,7 @@
                 "register"
               ]
             },
-            "description": "Registration Step 1 — validates input and sends a 6-digit OTP to the driver’s email. Account is NOT yet created. Check email for the code, then call Verify Driver Registration."
+            "description": "Registration Step 1 \u2014 validates input and sends a 6-digit OTP to the driver\u2019s email. Account is NOT yet created. Check email for the code, then call Verify Driver Registration."
           },
           "response": [
             {
@@ -711,7 +768,7 @@
           "event": []
         },
         {
-          "name": "Verify Driver Registration (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Driver Registration (Step 2 \u2014 exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -734,11 +791,11 @@
                 "verify-register"
               ]
             },
-            "description": "Registration Step 2 — verifies the OTP from email and creates the account, issuing access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
+            "description": "Registration Step 2 \u2014 verifies the OTP from email and creates the account, issuing access + refresh tokens. Set the `driverOTP` collection variable to the code from your inbox before running."
           },
           "response": [
             {
-              "name": "201 Created — account created, tokens issued",
+              "name": "201 Created \u2014 account created, tokens issued",
               "status": "Created",
               "code": 201,
               "header": [
@@ -803,7 +860,7 @@
                 "login"
               ]
             },
-            "description": "Password-only login — validates credentials and returns access + refresh tokens immediately. No OTP required after initial registration."
+            "description": "Password-only login \u2014 validates credentials and returns access + refresh tokens immediately. No OTP required after initial registration."
           },
           "response": [
             {
@@ -854,35 +911,88 @@
           "name": "Forgot Password (Driver)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"ravi@demo.com\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/forgot-password", "host": ["{{base_url}}"], "path": ["drivers", "forgot-password"] },
+            "url": {
+              "raw": "{{base_url}}/drivers/forgot-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "forgot-password"
+              ]
+            },
             "description": "Sends a 6-digit OTP to the driver's email. Check inbox, then run Reset Password (Driver) with the code."
           },
           "response": [
-            { "name": "202 OTP Sent", "status": "Accepted", "code": 202, "body": "{ \"message\": \"OTP sent to ravi@demo.com\" }" },
-            { "name": "400 Email Not Found", "status": "Bad Request", "code": 400, "body": "{ \"error\": \"no account found with that email\" }" }
+            {
+              "name": "202 OTP Sent",
+              "status": "Accepted",
+              "code": 202,
+              "body": "{ \"message\": \"OTP sent to ravi@demo.com\" }"
+            },
+            {
+              "name": "400 Email Not Found",
+              "status": "Bad Request",
+              "code": 400,
+              "body": "{ \"error\": \"no account found with that email\" }"
+            }
           ]
         },
         {
           "name": "Reset Password (Driver)",
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"otp\": \"{{driverOTP}}\",\n  \"new_password\": \"NewPass123!\"\n}"
             },
-            "url": { "raw": "{{base_url}}/drivers/reset-password", "host": ["{{base_url}}"], "path": ["drivers", "reset-password"] },
+            "url": {
+              "raw": "{{base_url}}/drivers/reset-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "drivers",
+                "reset-password"
+              ]
+            },
             "description": "Verifies the OTP from Forgot Password and sets the new password. Set `driverOTP` to the 6-digit code from your email before running."
           },
           "response": [
-            { "name": "200 Password Reset", "status": "OK", "code": 200, "body": "{ \"message\": \"password reset successfully\" }" },
-            { "name": "401 Invalid OTP", "status": "Unauthorized", "code": 401, "body": "{ \"error\": \"invalid OTP\" }" },
-            { "name": "429 Max Attempts", "status": "Too Many Requests", "code": 429, "body": "{ \"error\": \"max OTP attempts exceeded\" }" }
+            {
+              "name": "200 Password Reset",
+              "status": "OK",
+              "code": 200,
+              "body": "{ \"message\": \"password reset successfully\" }"
+            },
+            {
+              "name": "401 Invalid OTP",
+              "status": "Unauthorized",
+              "code": 401,
+              "body": "{ \"error\": \"invalid OTP\" }"
+            },
+            {
+              "name": "429 Max Attempts",
+              "status": "Too Many Requests",
+              "code": 429,
+              "body": "{ \"error\": \"max OTP attempts exceeded\" }"
+            }
           ]
         },
         {
@@ -926,8 +1036,12 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const body = pm.response.json();",
-                  "pm.collectionVariables.set('driver_token', body.access_token);",
-                  "pm.collectionVariables.set('driver_refresh_token', body.refresh_token);"
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('driver_token', body.access_token);",
+                  "  pm.collectionVariables.set('driver_refresh_token', body.refresh_token);",
+                  "  pm.test('Tokens rotated', () => pm.expect(body.refresh_token).to.be.a('string').and.not.empty);",
+                  "  console.log('driver tokens rotated via refresh');",
+                  "}"
                 ],
                 "type": "text/javascript"
               }
@@ -1177,7 +1291,7 @@
                 "respond"
               ]
             },
-            "description": "Accept or reject a pending ride offer from the matching service.\n\nThe matching service sends a `ride.offered` Kafka event when a driver is selected. The driver has **15 seconds** to respond before the offer times out and the next nearest driver is tried.\n\n**accept: true** — publishes `driver.assigned`, trip transitions to DRIVER_ASSIGNED.\n\n**accept: false** — driver is unlocked, restored to the GEO pool, and the trip is re-queued skipping this driver.\n\nCall this immediately after `Request Trip` (within 15s). Requires driver JWT."
+            "description": "Accept or reject a pending ride offer from the matching service.\n\nThe matching service sends a `ride.offered` Kafka event when a driver is selected. The driver has **15 seconds** to respond before the offer times out and the next nearest driver is tried.\n\n**accept: true** \u2014 publishes `driver.assigned`, trip transitions to DRIVER_ASSIGNED.\n\n**accept: false** \u2014 driver is unlocked, restored to the GEO pool, and the trip is re-queued skipping this driver.\n\nCall this immediately after `Request Trip` (within 15s). Requires driver JWT."
           },
           "response": [
             {
@@ -1241,7 +1355,7 @@
                 "estimate"
               ]
             },
-            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** ₹50 (base) + ₹12 × distance_km"
+            "description": "Get fare estimate before requesting a trip. No DB or Kafka involved.\n\n**Fare formula:** \u20b950 (base) + \u20b912 \u00d7 distance_km"
           },
           "response": [
             {
@@ -1296,7 +1410,7 @@
                 "request"
               ]
             },
-            "description": "Request a new ride. Publishes `ride.requested` to Kafka → Matching service finds driver → publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
+            "description": "Request a new ride. Publishes `ride.requested` to Kafka \u2192 Matching service finds driver \u2192 publishes `driver.assigned`.\n\n**Wait ~3 seconds, then call Get Trip Details to verify DRIVER_ASSIGNED status.**\n\nPrerequisites: Driver must be `available` and have set their location."
           },
           "response": [
             {
@@ -1349,11 +1463,11 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED → DRIVER_ASSIGNED → STARTED → COMPLETED / CANCELLED\n\n**Ride OTP:** When the caller is the rider and status is `DRIVER_ASSIGNED`, the response includes `ride_otp` — a 4-digit code the rider shares verbally with the driver. The driver must submit this OTP when calling Start Trip. The test script auto-captures it into `ride_otp`."
+            "description": "Fetch full trip details by ID. Call this ~3 seconds after Request Trip to verify driver was assigned.\n\n**Trip statuses:** REQUESTED \u2192 DRIVER_ASSIGNED \u2192 STARTED \u2192 COMPLETED / CANCELLED\n\n**Ride OTP:** When the caller is the rider and status is `DRIVER_ASSIGNED`, the response includes `ride_otp` \u2014 a 4-digit code the rider shares verbally with the driver. The driver must submit this OTP when calling Start Trip. The test script auto-captures it into `ride_otp`."
           },
           "response": [
             {
-              "name": "200 OK — DRIVER_ASSIGNED (with ride OTP)",
+              "name": "200 OK \u2014 DRIVER_ASSIGNED (with ride OTP)",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"t1r2i3p4-0000-0000-0000-000000000000\",\n  \"rider_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n  \"driver_id\": \"d5e6f7g8-0000-0000-0000-000000000000\",\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"status\": \"DRIVER_ASSIGNED\",\n  \"ride_otp\": \"4823\",\n  \"requested_at\": \"2026-03-08T10:00:00Z\",\n  \"created_at\": \"2026-03-08T10:00:00Z\"\n}"
@@ -1416,7 +1530,7 @@
                 "assign"
               ]
             },
-            "description": "Manually assign a driver to a REQUESTED trip. In production this is called exclusively by matching-service via the `X-Internal-Secret` header — not by end-user clients.\n\nSet the `internal_secret` collection variable to the value of your `INTERNAL_SECRET` env var before running."
+            "description": "Manually assign a driver to a REQUESTED trip. In production this is called exclusively by matching-service via the `X-Internal-Secret` header \u2014 not by end-user clients.\n\nSet the `internal_secret` collection variable to the value of your `INTERNAL_SECRET` env var before running."
           },
           "response": [
             {
@@ -1467,7 +1581,7 @@
                 "start"
               ]
             },
-            "description": "Move trip to STARTED state. Only the assigned driver can call this.\n\n**OTP required:** The rider sees a 4-digit `ride_otp` in `GET /trips/{id}` (only while status is `DRIVER_ASSIGNED`). The driver must submit it here. The `ride_otp` variable is auto-populated by the Get Trip Details test script.\n\n**Errors:**\n- `400 otp is required` — body missing `otp` field\n- `400 invalid OTP` — wrong code\n- `400 ride OTP not found or expired` — OTP expired (2hr TTL) or trip already started\n- `403` — caller is not the assigned driver\n\nPrerequisite: Trip must be in DRIVER_ASSIGNED status."
+            "description": "Move trip to STARTED state. Only the assigned driver can call this.\n\n**OTP required:** The rider sees a 4-digit `ride_otp` in `GET /trips/{id}` (only while status is `DRIVER_ASSIGNED`). The driver must submit it here. The `ride_otp` variable is auto-populated by the Get Trip Details test script.\n\n**Errors:**\n- `400 otp is required` \u2014 body missing `otp` field\n- `400 invalid OTP` \u2014 wrong code\n- `400 ride OTP not found or expired` \u2014 OTP expired (2hr TTL) or trip already started\n- `403` \u2014 caller is not the assigned driver\n\nPrerequisite: Trip must be in DRIVER_ASSIGNED status."
           },
           "response": [
             {
@@ -1492,7 +1606,7 @@
               "name": "400 OTP Expired",
               "status": "Bad Request",
               "code": 400,
-              "body": "{ \"error\": \"ride OTP not found or expired — ask the rider to refresh their app\" }"
+              "body": "{ \"error\": \"ride OTP not found or expired \u2014 ask the rider to refresh their app\" }"
             },
             {
               "name": "403 Not Assigned Driver",
@@ -1601,7 +1715,7 @@
                 "end"
               ]
             },
-            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` → Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
+            "description": "Complete a trip. Fare is auto-calculated using Haversine formula from pickup/drop coordinates.\n\nPublishes `trip.completed` \u2192 Payment service auto-creates payment.\n\nPrerequisite: Trip must be in STARTED status."
           },
           "response": [
             {
@@ -1621,7 +1735,7 @@
                   "  const body = pm.response.json();",
                   "  pm.expect(body.status).to.eql('COMPLETED');",
                   "  pm.expect(body.fare).to.be.a('number').and.above(0);",
-                  "  console.log('Fare: ₹' + body.fare);",
+                  "  console.log('Fare: \u20b9' + body.fare);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -1658,7 +1772,7 @@
                 "rate"
               ]
             },
-            "description": "Submit a rating (1–5) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `ridego.events {type:rating.submitted}` → Driver/User service updates average rating."
+            "description": "Submit a rating (1\u20135) for a completed trip. Each rater can only rate once per trip (UNIQUE constraint).\n\nPublishes `ridego.events {type:rating.submitted}` \u2192 Driver/User service updates average rating."
           },
           "response": [
             {
@@ -1919,7 +2033,7 @@
                 "{{payment_id}}"
               ]
             },
-            "description": "Opens the RideGo payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** → Cash tab — waiting state (no rider action). Shows steps: hand cash → driver confirms → page updates via WebSocket.\n- **upi** → UPI tab — shows Razorpay-hosted QR image (scan with any UPI app) + VPA input. QR scan fires  webhook; VPA collect fires  webhook. Page updates via WebSocket when either succeeds — no countdown timer.\n- **card** → Card tab — Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in  as .\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page → sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls  (Request 3 below)\n4. WebSocket pushes completion → page shows success automatically"
+            "description": "Opens the RideGo payment checkout page in a browser.\n\nThe page auto-selects the tab matching the rider's chosen payment method:\n- **cash** \u2192 Cash tab \u2014 waiting state (no rider action). Shows steps: hand cash \u2192 driver confirms \u2192 page updates via WebSocket.\n- **upi** \u2192 UPI tab \u2014 shows Razorpay-hosted QR image (scan with any UPI app) + VPA input. QR scan fires  webhook; VPA collect fires  webhook. Page updates via WebSocket when either succeeds \u2014 no countdown timer.\n- **card** \u2192 Card tab \u2014 Razorpay checkout widget.\n\nFor card/UPI the checkout URL (with short-lived token) is returned in  as .\n\n**Cash flow (no rider action needed):**\n1. Rider opens checkout page \u2192 sees waiting state with pulse animation\n2. Rider hands cash to driver\n3. Driver calls  (Request 3 below)\n4. WebSocket pushes completion \u2192 page shows success automatically"
           },
           "response": []
         },
@@ -1944,11 +2058,11 @@
                 "confirm-cash"
               ]
             },
-            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM → COMPLETED`\n\nPublishes `ridego.events {type:payment.completed}` → triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
+            "description": "Called by the **driver** after collecting cash from the rider.\n\nTransitions payment: `AWAITING_CASH_CONFIRM \u2192 COMPLETED`\n\nPublishes `ridego.events {type:payment.completed}` \u2192 triggers notification email to rider and WebSocket push to the checkout page.\n\n**Auth:** Driver JWT required. Returns 403 if the token belongs to a different driver than the one assigned to this payment."
           },
           "response": [
             {
-              "name": "200 OK — Cash Confirmed",
+              "name": "200 OK \u2014 Cash Confirmed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"cash\",\n  \"completed_at\": \"2026-04-10T08:00:00Z\"\n}"
@@ -2009,7 +2123,7 @@
                 "simulate-success"
               ]
             },
-            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `ridego.events {type:payment.completed}` → triggers in-app notification and email to rider."
+            "description": "Complete a payment instantly without going through a payment provider. Useful for local development and integration testing when Razorpay keys are not configured.\n\nPublishes `ridego.events {type:payment.completed}` \u2192 triggers in-app notification and email to rider."
           },
           "response": [
             {
@@ -2138,7 +2252,7 @@
           },
           "response": [
             {
-              "name": "200 OK — Payment Completed",
+              "name": "200 OK \u2014 Payment Completed",
               "status": "OK",
               "code": 200,
               "body": "{\n  \"id\": \"p1a2y3m4-0000-0000-0000-000000000000\",\n  \"status\": \"COMPLETED\",\n  \"amount\": 112.22,\n  \"payment_method\": \"razorpay\",\n  \"completed_at\": \"2026-03-08T10:25:10Z\"\n}"
@@ -2286,7 +2400,7 @@
               "name": "200 OK",
               "status": "OK",
               "code": 200,
-              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of ₹112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
+              "body": "{\n  \"notifications\": [\n    {\n      \"id\": \"n1o2t3i4-0000-0000-0000-000000000000\",\n      \"user_id\": \"a1b2c3d4-0000-0000-0000-000000000000\",\n      \"type\": \"payment_completed\",\n      \"title\": \"Payment Processed\",\n      \"body\": \"Payment of \u20b9112.22 processed successfully\",\n      \"read\": false,\n      \"created_at\": \"2026-03-08T10:25:01Z\"\n    }\n  ],\n  \"total\": 3,\n  \"limit\": 20,\n  \"offset\": 0\n}"
             }
           ],
           "event": [
@@ -2380,7 +2494,7 @@
                 "{{trip_id}}"
               ]
             },
-            "description": "**WebSocket endpoint** — real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
+            "description": "**WebSocket endpoint** \u2014 real-time trip location tracking.\n\nCannot be tested via HTTP in Postman. Use a WebSocket client:\n\n```bash\n# wscat\nwscat -c ws://localhost:8000/ws/trips/$TRIP_ID\n\n# websocat\nwebsocat ws://localhost:8000/ws/trips/$TRIP_ID\n```\n\n**Server pushes JSON on driver location update:**\n```json\n{\n  \"trip_id\": \"...\",\n  \"lat\": 12.9720,\n  \"lng\": 77.5950,\n  \"ts\": 1741000000\n}\n```"
           }
         }
       ]
