@@ -11,16 +11,16 @@ jobs:
     steps:
       - name: Ping all services
         run: |
-          BASE="https://api-gateway-ov0j.onrender.com"
           SERVICES=(
-            "$BASE/health"
-            "$BASE/users/health"
-            "$BASE/drivers/health"
-            "$BASE/trips/health"
-            "$BASE/payments/health"
-            "$BASE/notifications/health"
+            "https://api-gateway-ov0j.onrender.com/health"
+            "https://user-service-kkxa.onrender.com/health"
+            "https://driver-service-uqbi.onrender.com/health"
+            "https://trip-service-8j8x.onrender.com/health"
+            "https://payment-service-91bl.onrender.com/health"
+            "https://notification-service-ftxu.onrender.com/health"
+            "https://matching-service-5bxa.onrender.com/health"
           )
           for url in "${SERVICES[@]}"; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$url")
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$url")
             echo "$url → $code"
           done
