@@ -984,7 +984,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
+              "raw": "{\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/estimate",
@@ -1039,7 +1039,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245,\n  \"payment_method\": \"upi\"\n}"
+              "raw": "{\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"payment_method\": \"upi\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/request",
@@ -1158,7 +1158,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"driverId\": \"{{driver_id}}\"\n}"
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/assign",
