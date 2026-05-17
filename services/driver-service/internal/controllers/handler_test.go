@@ -20,16 +20,18 @@ import (
 // ---------- mock ----------
 
 type mockDriverService struct {
-	RegisterFn         func(ctx context.Context, req model.RegisterRequest) error
-	VerifyRegisterFn   func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
-	LoginFn            func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
-	RefreshFn          func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
-	GetByIDFn          func(ctx context.Context, id string) (*model.Driver, error)
-	UpdateLocationFn   func(ctx context.Context, driverID string, lat, lng float64) error
-	UpdateStatusFn     func(ctx context.Context, driverID, status string) (*model.Driver, error)
-	GetNearbyFn        func(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
-	RespondToOfferFn   func(ctx context.Context, driverID, tripID string, accept bool) error
-	UpdateFn           func(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
+	RegisterFn        func(ctx context.Context, req model.RegisterRequest) error
+	VerifyRegisterFn  func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
+	LoginFn           func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
+	RefreshFn         func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
+	GetByIDFn         func(ctx context.Context, id string) (*model.Driver, error)
+	UpdateLocationFn  func(ctx context.Context, driverID string, lat, lng float64) error
+	UpdateStatusFn    func(ctx context.Context, driverID, status string) (*model.Driver, error)
+	GetNearbyFn       func(ctx context.Context, lat, lng, radiusKm float64) ([]string, error)
+	RespondToOfferFn  func(ctx context.Context, driverID, tripID string, accept bool) error
+	UpdateFn          func(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
+	ForgotPasswordFn  func(ctx context.Context, req model.ForgotPasswordRequest) error
+	ResetPasswordFn   func(ctx context.Context, req model.ResetPasswordRequest) error
 }
 
 func (m *mockDriverService) Register(ctx context.Context, req model.RegisterRequest) error {
@@ -67,6 +69,18 @@ func (m *mockDriverService) Update(ctx context.Context, id string, req model.Upd
 		return m.UpdateFn(ctx, id, req)
 	}
 	return nil, nil
+}
+func (m *mockDriverService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	if m.ForgotPasswordFn != nil {
+		return m.ForgotPasswordFn(ctx, req)
+	}
+	return nil
+}
+func (m *mockDriverService) ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error {
+	if m.ResetPasswordFn != nil {
+		return m.ResetPasswordFn(ctx, req)
+	}
+	return nil
 }
 
 // ---------- helpers ----------

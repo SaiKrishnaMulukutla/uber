@@ -33,6 +33,8 @@ type UserService interface {
 	Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
 	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
+	ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error
+	ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error
 }
 
 type pendingRegistration struct {
@@ -163,5 +165,33 @@ func (s *userService) GetByID(ctx context.Context, id string) (*model.User, erro
 
 func (s *userService) Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error) {
 	return s.repo.Update(ctx, id, req.Name, req.Phone)
+}
+
+// ForgotPassword verifies the email exists and sends an OTP for password reset.
+func (s *userService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	exists, err := s.repo.EmailExists(ctx, req.Email)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("no account found with that email")
+	}
+	return s.otp.SendOTP(ctx, req.Email)
+}
+
+// ResetPassword verifies the OTP then replaces the password hash.
+func (s *userService) ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error {
+	if err := s.otp.VerifyOTP(ctx, req.Email, req.OTP); err != nil {
+		return err
+	}
+	u, _, err := s.repo.FindByEmail(ctx, req.Email)
+	if err != nil {
+		return errors.New("user not found")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	return s.repo.UpdatePassword(ctx, u.ID, string(hash))
 }
 
