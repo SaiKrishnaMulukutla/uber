@@ -16,6 +16,7 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*model.User, string, error)
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	Update(ctx context.Context, id, name, phone string) (*model.User, error)
+	UpdatePassword(ctx context.Context, id, hash string) error
 	UpdateRating(ctx context.Context, userID string, score int) error
 }
 
@@ -83,6 +84,17 @@ func (r *pgUserRepository) Update(ctx context.Context, id, name, phone string) (
 		return nil, errors.New("user not found")
 	}
 	return &u, nil
+}
+
+func (r *pgUserRepository) UpdatePassword(ctx context.Context, id, hash string) error {
+	tag, err := r.db.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2`, hash, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("user not found")
+	}
+	return nil
 }
 
 func (r *pgUserRepository) UpdateRating(ctx context.Context, userID string, score int) error {

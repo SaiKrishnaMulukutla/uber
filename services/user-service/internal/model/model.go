@@ -49,3 +49,13 @@ type UpdateRequest struct {
 	Name  string `json:"name"`
 	Phone string `json:"phone"`
 }
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ResetPasswordRequest struct {
+	Email       string `json:"email"`
+	OTP         string `json:"otp"`
+	NewPassword string `json:"new_password"`
+}

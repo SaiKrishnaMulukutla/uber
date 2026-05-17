@@ -19,6 +19,7 @@ type DriverRepository interface {
 	UpdateStatus(ctx context.Context, driverID, status string) error
 	UpdateRating(ctx context.Context, driverID string, score int) error
 	Update(ctx context.Context, id, name, phone, vehicleType, licensePlate string) (*model.Driver, error)
+	UpdatePassword(ctx context.Context, id, hash string) error
 }
 
 type pgDriverRepository struct{ pool *pgxpool.Pool }
@@ -99,6 +100,17 @@ func (r *pgDriverRepository) Update(ctx context.Context, id, name, phone, vehicl
 // UpdateStatus sets status in Postgres only — Redis GEO sync is handled by service.
 func (r *pgDriverRepository) UpdateStatus(ctx context.Context, driverID, status string) error {
 	tag, err := r.pool.Exec(ctx, `UPDATE drivers SET status=$1 WHERE id=$2`, status, driverID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("driver not found")
+	}
+	return nil
+}
+
+func (r *pgDriverRepository) UpdatePassword(ctx context.Context, id, hash string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE drivers SET password_hash=$1 WHERE id=$2`, hash, id)
 	if err != nil {
 		return err
 	}
