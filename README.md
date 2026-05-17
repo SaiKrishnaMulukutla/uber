@@ -234,7 +234,7 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location in Redis GEO |
 | PATCH | `/drivers/{id}/status` | Bearer (driver) | Set `available` / `offline` |
 | GET | `/drivers/nearby` | Bearer | Find available drivers within radius |
-| POST | `/drivers/trips/{tripId}/respond` | Bearer (driver) | Accept or reject a pending ride offer (15s window) |
+| POST | `/drivers/trips/{tripId}/respond` | Bearer (driver) | Accept or reject a pending ride offer (60s window) |
 
 ### Trips — `/trips`
 
@@ -334,7 +334,7 @@ TRIP=$(curl -s -X POST $BASE/trips/request \
   -d '{"pickup_lat":12.9716,"pickup_lng":77.5946,"drop_lat":12.9352,"drop_lng":77.6245,"payment_method":"upi"}')
 TRIP_ID=$(echo $TRIP | jq -r '.trip_id')
 
-# 5. Driver accepts the ride offer (within 15s window)
+# 5. Driver accepts the ride offer (within 60s window)
 curl -s -X POST $BASE/drivers/trips/$TRIP_ID/respond \
   -H "Authorization: Bearer $DRIVER_TOKEN" \
   -H "Content-Type: application/json" \
