@@ -20,9 +20,9 @@ import (
 // ---------- mock ----------
 
 type mockDriverService struct {
-	RegisterFn         func(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error)
-	LoginFn            func(ctx context.Context, req model.LoginRequest) error
-	VerifyLoginFn      func(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
+	RegisterFn         func(ctx context.Context, req model.RegisterRequest) error
+	VerifyRegisterFn   func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
+	LoginFn            func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
 	RefreshFn          func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByIDFn          func(ctx context.Context, id string) (*model.Driver, error)
 	UpdateLocationFn   func(ctx context.Context, driverID string, lat, lng float64) error
@@ -32,14 +32,14 @@ type mockDriverService struct {
 	UpdateFn           func(ctx context.Context, id string, req model.UpdateRequest) (*model.Driver, error)
 }
 
-func (m *mockDriverService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
+func (m *mockDriverService) Register(ctx context.Context, req model.RegisterRequest) error {
 	return m.RegisterFn(ctx, req)
 }
-func (m *mockDriverService) Login(ctx context.Context, req model.LoginRequest) error {
-	return m.LoginFn(ctx, req)
+func (m *mockDriverService) VerifyRegister(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+	return m.VerifyRegisterFn(ctx, req)
 }
-func (m *mockDriverService) VerifyLogin(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-	return m.VerifyLoginFn(ctx, req)
+func (m *mockDriverService) Login(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+	return m.LoginFn(ctx, req)
 }
 func (m *mockDriverService) Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error) {
 	return m.RefreshFn(ctx, refreshToken)
@@ -103,19 +103,36 @@ func doRequest(router http.Handler, method, path string, body any, token string)
 
 func TestRegister_Success(t *testing.T) {
 	mock := &mockDriverService{
-		RegisterFn: func(_ context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
-			return &model.AuthResponse{
-				AccessToken:  "access-tok",
-				RefreshToken: "refresh-tok",
-				Driver:       &model.Driver{ID: "d1", Name: req.Name, Email: req.Email, Phone: req.Phone, Status: "available", Rating: 5.0},
-			}, nil
+		RegisterFn: func(_ context.Context, req model.RegisterRequest) error {
+			return nil
 		},
 	}
 	router := driverRouter(mock)
 
 	rec := doRequest(router, http.MethodPost, "/drivers/register", model.RegisterRequest{
 		Name: "Bob", Email: "bob@example.com", Phone: "+1234567890", Password: "secret123",
-		VehicleType: "sedan", LicensePlate: "ABC-123",
+		VehicleType: "x", LicensePlate: "ABC-123",
+	}, "")
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVerifyRegister_Success(t *testing.T) {
+	mock := &mockDriverService{
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return &model.AuthResponse{
+				AccessToken:  "access-tok",
+				RefreshToken: "refresh-tok",
+				Driver:       &model.Driver{ID: "d1", Email: req.Email},
+			}, nil
+		},
+	}
+	router := driverRouter(mock)
+
+	rec := doRequest(router, http.MethodPost, "/drivers/verify-register", model.VerifyRegisterRequest{
+		Email: "bob@example.com", OTP: "123456",
 	}, "")
 
 	if rec.Code != http.StatusCreated {
@@ -128,33 +145,16 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
-func TestLogin_Success(t *testing.T) {
+func TestVerifyRegister_InvalidOTP(t *testing.T) {
 	mock := &mockDriverService{
-		LoginFn: func(_ context.Context, req model.LoginRequest) error {
-			return nil
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return nil, otp.ErrInvalidOTP
 		},
 	}
 	router := driverRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/drivers/login", model.LoginRequest{
-		Email: "bob@example.com", Password: "secret123",
-	}, "")
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestLogin_InvalidCredentials(t *testing.T) {
-	mock := &mockDriverService{
-		LoginFn: func(_ context.Context, req model.LoginRequest) error {
-			return errors.New("invalid credentials")
-		},
-	}
-	router := driverRouter(mock)
-
-	rec := doRequest(router, http.MethodPost, "/drivers/login", model.LoginRequest{
-		Email: "bob@example.com", Password: "wrong",
+	rec := doRequest(router, http.MethodPost, "/drivers/verify-register", model.VerifyRegisterRequest{
+		Email: "bob@example.com", OTP: "000000",
 	}, "")
 
 	if rec.Code != http.StatusUnauthorized {
@@ -162,20 +162,33 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	}
 }
 
-func TestVerifyLogin_Success(t *testing.T) {
+func TestVerifyRegister_MaxAttempts(t *testing.T) {
 	mock := &mockDriverService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return &model.AuthResponse{
-				AccessToken:  "access-tok",
-				RefreshToken: "refresh-tok",
-				Driver:       &model.Driver{ID: "d1", Email: req.Email},
-			}, nil
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return nil, otp.ErrMaxAttemptsExceeded
 		},
 	}
 	router := driverRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/drivers/verify-login", model.VerifyLoginRequest{
-		Email: "bob@example.com", OTP: "123456",
+	rec := doRequest(router, http.MethodPost, "/drivers/verify-register", model.VerifyRegisterRequest{
+		Email: "bob@example.com", OTP: "000000",
+	}, "")
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogin_Success(t *testing.T) {
+	mock := &mockDriverService{
+		LoginFn: func(_ context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+			return &model.AuthResponse{AccessToken: "access-tok", RefreshToken: "refresh-tok"}, nil
+		},
+	}
+	router := driverRouter(mock)
+
+	rec := doRequest(router, http.MethodPost, "/drivers/login", model.LoginRequest{
+		Email: "bob@example.com", Password: "secret123",
 	}, "")
 
 	if rec.Code != http.StatusOK {
@@ -188,37 +201,20 @@ func TestVerifyLogin_Success(t *testing.T) {
 	}
 }
 
-func TestVerifyLogin_InvalidOTP(t *testing.T) {
+func TestLogin_InvalidCredentials(t *testing.T) {
 	mock := &mockDriverService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otp.ErrInvalidOTP
+		LoginFn: func(_ context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+			return nil, errors.New("invalid credentials")
 		},
 	}
 	router := driverRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/drivers/verify-login", model.VerifyLoginRequest{
-		Email: "bob@example.com", OTP: "000000",
+	rec := doRequest(router, http.MethodPost, "/drivers/login", model.LoginRequest{
+		Email: "bob@example.com", Password: "wrongpass",
 	}, "")
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestVerifyLogin_MaxAttempts(t *testing.T) {
-	mock := &mockDriverService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otp.ErrMaxAttemptsExceeded
-		},
-	}
-	router := driverRouter(mock)
-
-	rec := doRequest(router, http.MethodPost, "/drivers/verify-login", model.VerifyLoginRequest{
-		Email: "bob@example.com", OTP: "000000",
-	}, "")
-
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

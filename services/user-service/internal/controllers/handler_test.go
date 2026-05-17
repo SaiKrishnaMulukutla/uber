@@ -20,22 +20,22 @@ import (
 // ---------- mock ----------
 
 type mockUserService struct {
-	RegisterFn    func(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error)
-	LoginFn       func(ctx context.Context, req model.LoginRequest) error
-	VerifyLoginFn func(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
-	RefreshFn     func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
-	GetByIDFn     func(ctx context.Context, id string) (*model.User, error)
-	UpdateFn      func(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
+	RegisterFn       func(ctx context.Context, req model.RegisterRequest) error
+	VerifyRegisterFn func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
+	LoginFn          func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
+	RefreshFn        func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
+	GetByIDFn        func(ctx context.Context, id string) (*model.User, error)
+	UpdateFn         func(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
 }
 
-func (m *mockUserService) Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
+func (m *mockUserService) Register(ctx context.Context, req model.RegisterRequest) error {
 	return m.RegisterFn(ctx, req)
 }
-func (m *mockUserService) Login(ctx context.Context, req model.LoginRequest) error {
-	return m.LoginFn(ctx, req)
+func (m *mockUserService) VerifyRegister(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+	return m.VerifyRegisterFn(ctx, req)
 }
-func (m *mockUserService) VerifyLogin(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-	return m.VerifyLoginFn(ctx, req)
+func (m *mockUserService) Login(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+	return m.LoginFn(ctx, req)
 }
 func (m *mockUserService) Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error) {
 	return m.RefreshFn(ctx, refreshToken)
@@ -84,18 +84,35 @@ func doRequest(router http.Handler, method, path string, body any, token string)
 
 func TestRegister_Success(t *testing.T) {
 	mock := &mockUserService{
-		RegisterFn: func(_ context.Context, req model.RegisterRequest) (*model.AuthResponse, error) {
-			return &model.AuthResponse{
-				AccessToken:  "access-tok",
-				RefreshToken: "refresh-tok",
-				User:         &model.User{ID: "u1", Name: req.Name, Email: req.Email, Phone: req.Phone, Rating: 5.0},
-			}, nil
+		RegisterFn: func(_ context.Context, req model.RegisterRequest) error {
+			return nil
 		},
 	}
 	router := userRouter(mock)
 
 	rec := doRequest(router, http.MethodPost, "/users/register", model.RegisterRequest{
 		Name: "Alice", Email: "alice@example.com", Phone: "+1234567890", Password: "secret123",
+	}, "")
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVerifyRegister_Success(t *testing.T) {
+	mock := &mockUserService{
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return &model.AuthResponse{
+				AccessToken:  "access-tok",
+				RefreshToken: "refresh-tok",
+				User:         &model.User{ID: "u1", Email: req.Email},
+			}, nil
+		},
+	}
+	router := userRouter(mock)
+
+	rec := doRequest(router, http.MethodPost, "/users/verify-register", model.VerifyRegisterRequest{
+		Email: "alice@example.com", OTP: "123456",
 	}, "")
 
 	if rec.Code != http.StatusCreated {
@@ -108,33 +125,16 @@ func TestRegister_Success(t *testing.T) {
 	}
 }
 
-func TestLogin_Success(t *testing.T) {
+func TestVerifyRegister_InvalidOTP(t *testing.T) {
 	mock := &mockUserService{
-		LoginFn: func(_ context.Context, req model.LoginRequest) error {
-			return nil
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return nil, otp.ErrInvalidOTP
 		},
 	}
 	router := userRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/users/login", model.LoginRequest{
-		Email: "alice@example.com", Password: "secret123",
-	}, "")
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected 202, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestLogin_InvalidCredentials(t *testing.T) {
-	mock := &mockUserService{
-		LoginFn: func(_ context.Context, req model.LoginRequest) error {
-			return errors.New("invalid credentials")
-		},
-	}
-	router := userRouter(mock)
-
-	rec := doRequest(router, http.MethodPost, "/users/login", model.LoginRequest{
-		Email: "alice@example.com", Password: "wrongpassword",
+	rec := doRequest(router, http.MethodPost, "/users/verify-register", model.VerifyRegisterRequest{
+		Email: "alice@example.com", OTP: "000000",
 	}, "")
 
 	if rec.Code != http.StatusUnauthorized {
@@ -142,20 +142,33 @@ func TestLogin_InvalidCredentials(t *testing.T) {
 	}
 }
 
-func TestVerifyLogin_Success(t *testing.T) {
+func TestVerifyRegister_MaxAttempts(t *testing.T) {
 	mock := &mockUserService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return &model.AuthResponse{
-				AccessToken:  "access-tok",
-				RefreshToken: "refresh-tok",
-				User:         &model.User{ID: "u1", Email: req.Email},
-			}, nil
+		VerifyRegisterFn: func(_ context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error) {
+			return nil, otp.ErrMaxAttemptsExceeded
 		},
 	}
 	router := userRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/users/verify-login", model.VerifyLoginRequest{
-		Email: "alice@example.com", OTP: "123456",
+	rec := doRequest(router, http.MethodPost, "/users/verify-register", model.VerifyRegisterRequest{
+		Email: "alice@example.com", OTP: "000000",
+	}, "")
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogin_Success(t *testing.T) {
+	mock := &mockUserService{
+		LoginFn: func(_ context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+			return &model.AuthResponse{AccessToken: "access-tok", RefreshToken: "refresh-tok"}, nil
+		},
+	}
+	router := userRouter(mock)
+
+	rec := doRequest(router, http.MethodPost, "/users/login", model.LoginRequest{
+		Email: "alice@example.com", Password: "secret123",
 	}, "")
 
 	if rec.Code != http.StatusOK {
@@ -168,37 +181,20 @@ func TestVerifyLogin_Success(t *testing.T) {
 	}
 }
 
-func TestVerifyLogin_InvalidOTP(t *testing.T) {
+func TestLogin_InvalidCredentials(t *testing.T) {
 	mock := &mockUserService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otp.ErrInvalidOTP
+		LoginFn: func(_ context.Context, req model.LoginRequest) (*model.AuthResponse, error) {
+			return nil, errors.New("invalid credentials")
 		},
 	}
 	router := userRouter(mock)
 
-	rec := doRequest(router, http.MethodPost, "/users/verify-login", model.VerifyLoginRequest{
-		Email: "alice@example.com", OTP: "000000",
+	rec := doRequest(router, http.MethodPost, "/users/login", model.LoginRequest{
+		Email: "alice@example.com", Password: "wrongpassword",
 	}, "")
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestVerifyLogin_MaxAttempts(t *testing.T) {
-	mock := &mockUserService{
-		VerifyLoginFn: func(_ context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error) {
-			return nil, otp.ErrMaxAttemptsExceeded
-		},
-	}
-	router := userRouter(mock)
-
-	rec := doRequest(router, http.MethodPost, "/users/verify-login", model.VerifyLoginRequest{
-		Email: "alice@example.com", OTP: "000000",
-	}, "")
-
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 429, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

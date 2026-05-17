@@ -32,7 +32,7 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 
 ## Features
 
-- **OTP-based 2FA login** — email/password + 6-digit OTP via SMTP for both riders and drivers
+- **OTP-verified registration** — account created only after 6-digit email OTP confirmed; login is password-only (no OTP friction on every login)
 - **Ride OTP confirmation** — 4-digit OTP generated on driver assignment; rider shares it verbally; driver must submit it to start the trip, preventing ghost rides
 - **Geospatial driver matching** — Redis GEO `GEORADIUS` search finds the nearest available driver and assigns via Kafka
 - **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
@@ -216,9 +216,9 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/users/register` | — | Register rider; returns JWT tokens |
-| POST | `/users/login` | — | Step 1: validate password, send OTP |
-| POST | `/users/verify-login` | — | Step 2: verify OTP, issue JWT |
+| POST | `/users/register` | — | Step 1: validate input, send registration OTP |
+| POST | `/users/verify-register` | — | Step 2: verify OTP, create account, issue JWT |
+| POST | `/users/login` | — | Validate password, issue JWT directly |
 | POST | `/users/refresh` | — | Rotate access token using refresh token |
 | GET | `/users/{id}` | Bearer (rider) | Get own profile (IDOR protected) |
 
@@ -226,9 +226,9 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/drivers/register` | — | Register driver with vehicle details |
-| POST | `/drivers/login` | — | Step 1: validate password, send OTP |
-| POST | `/drivers/verify-login` | — | Step 2: verify OTP, issue JWT |
+| POST | `/drivers/register` | — | Step 1: validate input, send registration OTP |
+| POST | `/drivers/verify-register` | — | Step 2: verify OTP, create account, issue JWT |
+| POST | `/drivers/login` | — | Validate password, issue JWT directly |
 | POST | `/drivers/refresh` | — | Rotate access token |
 | GET | `/drivers/{id}` | Bearer (driver) | Get own profile |
 | PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location in Redis GEO |
@@ -284,34 +284,37 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 ```bash
 BASE=http://localhost:8000
 
-# 1. Register rider
+# 1. Register rider (2 steps — OTP verifies email before account is created)
+# Step 1 — sends OTP to email
 curl -s -X POST $BASE/users/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Rider","email":"rider@test.com","phone":"+911111111111","password":"Pass123!"}'
-# → returns access_token directly on register (no OTP needed for registration)
-RIDER_TOKEN=<access_token from above>
-
-# Register driver
-curl -s -X POST $BASE/drivers/register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"x","license_plate":"KA-01-AB-1234"}'
-DRIVER_TOKEN=<access_token from above>
-DRIVER_ID=<driver.id from above>
-
-# 2. Login flow (OTP-based — 2 steps; required after registration expires)
-# Step 1 — sends OTP to email
-curl -s -X POST $BASE/users/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"rider@test.com","password":"Pass123!"}'
 # → { "message": "OTP sent to rider@test.com" }
 
-# Step 2 — verify OTP (check email for 6-digit code)
-curl -s -X POST $BASE/users/verify-login \
+# Step 2 — verify OTP (check inbox for 6-digit code)
+curl -s -X POST $BASE/users/verify-register \
   -H "Content-Type: application/json" \
   -d '{"email":"rider@test.com","otp":"123456"}'
 # → { "access_token": "...", "refresh_token": "...", "user": { ... } }
+RIDER_TOKEN=<access_token from above>
 
-# Same 2-step flow for drivers: POST /drivers/login → POST /drivers/verify-login
+# Register driver (same 2-step flow)
+curl -s -X POST $BASE/drivers/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test Driver","email":"driver@test.com","phone":"+912222222222","password":"Pass123!","vehicle_type":"x","license_plate":"KA-01-AB-1234"}'
+# → { "message": "OTP sent to driver@test.com" }
+curl -s -X POST $BASE/drivers/verify-register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"driver@test.com","otp":"123456"}'
+DRIVER_TOKEN=<access_token from above>
+DRIVER_ID=<driver.id from above>
+
+# 2. Login (password-only — no OTP required)
+curl -s -X POST $BASE/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"rider@test.com","password":"Pass123!"}'
+# → { "access_token": "...", "refresh_token": "...", "user": { ... } }
+RIDER_TOKEN=<access_token from above>
 
 # 3. Driver goes online and sets location
 curl -s -X PATCH $BASE/drivers/$DRIVER_ID/status \
