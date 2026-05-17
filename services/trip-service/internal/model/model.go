@@ -51,16 +51,16 @@ type Rating struct {
 }
 
 type TripRequest struct {
-	PickupLat     float64 `json:"pickupLat"`
-	PickupLng     float64 `json:"pickupLng"`
-	DropLat       float64 `json:"dropLat"`
-	DropLng       float64 `json:"dropLng"`
+	PickupLat     float64 `json:"pickup_lat"`
+	PickupLng     float64 `json:"pickup_lng"`
+	DropLat       float64 `json:"drop_lat"`
+	DropLng       float64 `json:"drop_lng"`
 	PaymentMethod string  `json:"payment_method,omitempty"` // cash | card | upi (default: cash)
 	VehicleType   string  `json:"vehicle_type,omitempty"`   // go | x | xl  (default: x)
 }
 
 type AssignRequest struct {
-	DriverID string `json:"driverId"`
+	DriverID string `json:"driver_id"`
 }
 
 type StartRequest struct {
@@ -68,8 +68,8 @@ type StartRequest struct {
 }
 
 type EndRequest struct {
-	DistanceKm      *float64 `json:"distanceKm,omitempty"`
-	DurationSeconds *int64   `json:"durationSeconds,omitempty"`
+	DistanceKm      *float64 `json:"distance_km,omitempty"`
+	DurationSeconds *int64   `json:"duration_seconds,omitempty"`
 }
 
 type CancelRequest struct {
@@ -84,10 +84,10 @@ type HistoryResponse struct {
 }
 
 type EstimateRequest struct {
-	PickupLat   float64 `json:"pickupLat"`
-	PickupLng   float64 `json:"pickupLng"`
-	DropLat     float64 `json:"dropLat"`
-	DropLng     float64 `json:"dropLng"`
+	PickupLat   float64 `json:"pickup_lat"`
+	PickupLng   float64 `json:"pickup_lng"`
+	DropLat     float64 `json:"drop_lat"`
+	DropLng     float64 `json:"drop_lng"`
 	VehicleType string  `json:"vehicle_type,omitempty"`
 }
 

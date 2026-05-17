@@ -403,9 +403,9 @@ Surge is applied to **estimates only** — the final fare on `PATCH /trips/{id}/
 
 ### Distance Validation
 
-Driver submits optional `distanceKm` on `PATCH /trips/{id}/end`. Accepted only if:
-- `distanceKm <= haversine_km × 1.5` (no more than 50% longer than straight-line)
-- `distanceKm <= 200 km`
+Driver submits optional `distance_km` on `PATCH /trips/{id}/end`. Accepted only if:
+- `distance_km <= haversine_km × 1.5` (no more than 50% longer than straight-line)
+- `distance_km <= 200 km`
 
 If the claim fails validation, the haversine distance is used instead.
 
@@ -590,12 +590,12 @@ TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed
 
 | Method | Path | Auth | Body | Response |
 |---|---|---|---|---|
-| POST | `/trips/estimate` | Bearer | `{pickupLat, pickupLng, dropLat, dropLng, vehicle_type?}` | `200 {estimated_fare, distance, duration_min, surge_multiplier, currency}` |
-| POST | `/trips/request` | Bearer (rider) | `{pickupLat, pickupLng, dropLat, dropLng, payment_method?, vehicle_type?}` | `201 {trip_id, status}` |
+| POST | `/trips/estimate` | Bearer | `{pickup_lat, pickup_lng, drop_lat, drop_lng, vehicle_type?}` | `200 {estimated_fare, distance, duration_min, surge_multiplier, currency}` |
+| POST | `/trips/request` | Bearer (rider) | `{pickup_lat, pickup_lng, drop_lat, drop_lng, payment_method?, vehicle_type?}` | `201 {trip_id, status}` |
 | GET | `/trips/{id}` | Bearer | — | `200 {trip}` (includes `ride_otp` for rider when DRIVER_ASSIGNED) |
-| PATCH | `/trips/{id}/assign` | X-Internal-Secret | `{driverId}` | `200 {trip}` |
+| PATCH | `/trips/{id}/assign` | X-Internal-Secret | `{driver_id}` | `200 {trip}` |
 | PATCH | `/trips/{id}/start` | Bearer (driver) | `{otp}` | `200 {trip}` |
-| PATCH | `/trips/{id}/end` | Bearer (driver) | `{distanceKm?, durationSeconds?}` | `200 {trip}` |
+| PATCH | `/trips/{id}/end` | Bearer (driver) | `{distance_km?, duration_seconds?}` | `200 {trip}` |
 | PATCH | `/trips/{id}/cancel` | Bearer | `{reason?}` | `200 {trip}` |
 | POST | `/trips/{id}/rate` | Bearer | `{score, comment?}` | `201 {rating}` |
 | POST | `/trips/{id}/location` | Bearer (driver) | `{lat, lng}` | `200 {status}` |
