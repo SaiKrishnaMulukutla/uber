@@ -139,6 +139,9 @@ func (s *driverService) VerifyRegister(ctx context.Context, req model.VerifyRegi
 	if err != nil {
 		return nil, err
 	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
+	}
 	if s.mailer != nil {
 		if err := s.mailer.Send(d.Email, "Welcome to RideGo!", mailer.WelcomeDriver(d.Name)); err != nil {
 			log.Printf("[driver-service] failed to send welcome email to %s: %v", d.Email, err)
@@ -160,6 +163,9 @@ func (s *driverService) Login(ctx context.Context, req model.LoginRequest) (*mod
 	if err != nil {
 		return nil, err
 	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
+	}
 	return &model.AuthResponse{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken, Driver: d}, nil
 }
 
@@ -171,9 +177,16 @@ func (s *driverService) Refresh(ctx context.Context, refreshToken string) (*mode
 	if claims.Role != model.RoleDriver {
 		return nil, errors.New("invalid token role")
 	}
+	if !s.redis.IsRefreshTokenValid(ctx, claims.ID) {
+		return nil, errors.New("refresh token has been revoked")
+	}
+	s.redis.RevokeRefreshToken(ctx, claims.ID)
 	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, "", claims.Role)
 	if err != nil {
 		return nil, err
+	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
 	}
 	return &model.RefreshResponse{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken}, nil
 }
@@ -182,14 +195,16 @@ func (s *driverService) GetByID(ctx context.Context, id string) (*model.Driver, 
 	return s.repo.FindByID(ctx, id)
 }
 
-// ForgotPassword verifies the email exists and sends an OTP for password reset.
+// ForgotPassword sends a password-reset OTP if the email is registered.
+// When the email is not found we return nil (no error) so the response is
+// identical to the success case — preventing account enumeration.
 func (s *driverService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
 	exists, err := s.repo.EmailExists(ctx, req.Email)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return errors.New("no account found with that email")
+		return nil
 	}
 	return s.otp.SendOTP(ctx, req.Email)
 }

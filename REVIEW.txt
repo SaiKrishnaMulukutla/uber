@@ -1,0 +1,592 @@
+================================================================================
+  RIDEGO — SENIOR DEVELOPER CODE REVIEW
+  Reviewer: Claude (Sonnet 4.6)  |  Date: 2026-05-17
+  Scope: Full end-to-end review of all 6 services + shared packages
+================================================================================
+
+OVERALL VERDICT
+---------------
+Solid foundation. The architecture is well-chosen (clean separation of concerns,
+repository pattern, Kafka event bus, Redis for ephemeral state). Error handling
+is consistent, OTP is properly hashed, JWT role enforcement is in the right
+places, and the matching flow (offer → accept/reject → assign) is correct.
+
+However there are a cluster of security and operational issues that must be fixed
+before this goes to real users. The critical bugs are documented below with
+exact file paths and concrete fixes.
+
+================================================================================
+  SECTION 1 — CRITICAL SECURITY (fix before any real traffic)
+================================================================================
+
+C-1. PAYMENT WEBSOCKET HAS ZERO AUTHENTICATION
+   File : services/payment-service/internal/hub/hub.go : 11-12
+   File : services/payment-service/internal/controllers/handler.go : 44
+
+   The PaymentHub upgrader uses `CheckOrigin: func(r *http.Request) bool { return true }`
+   and there is no JWT validation before upgrading. GET /payments/ws/{id} is
+   reachable by any unauthenticated client who guesses (or brute-forces) a
+   payment UUID.
+
+   Unlike the trip-service tracking hub (tracking/hub.go:74-84), which properly
+   validates ?token= before upgrading, the payment hub skips this entirely.
+
+   Impact: Any actor can subscribe to arbitrary payment completion events,
+   correlate user payment timing, and build timing attacks around payment IDs.
+
+   Fix: Add JWT validation identical to tracking/hub.go:74-84 before upgrading.
+   Also restrict CORS origin to allowed list in the PaymentHub constructor
+   (currently hardcoded `return true`).
+
+--------------------------------------------------------------------------------
+
+C-2. JWT ACCESS TOKEN EXPOSED IN CHECKOUT PAGE URL AND SOURCE
+   File : services/payment-service/internal/service/service.go : 82
+   File : services/payment-service/internal/controllers/checkout.go : 228,237
+
+   CreateOrder builds a checkout URL of the form:
+     /payments/checkout/{id}?token=<JWT_ACCESS_TOKEN>
+
+   The token is then rendered into the HTML page as a JavaScript constant
+   (checkout.go:228) and also appended to the WebSocket URL (checkout.go:237).
+
+   This means the live access JWT (15-min TTL, full API access) is:
+   - Visible in browser history and address bar
+   - Logged in nginx/CDN/Render access logs as a query parameter
+   - Sent in HTTP Referer header if page redirects
+   - Visible in any browser extension or proxy
+
+   Fix: The checkout flow should use the already-created `GenerateCheckoutToken`
+   (jwt.go:51-53) which creates a scoped "checkout" token type. Store it
+   server-side keyed to the payment ID. Never put an access token in a URL.
+   The WebSocket auth should also use the same short-lived checkout token.
+
+--------------------------------------------------------------------------------
+
+C-3. USER AND EMAIL ENUMERATION VIA FORGOTPASSWORD
+   File : services/user-service/internal/controllers/handler.go : 207-211
+   File : services/user-service/internal/service/service.go : 176-179
+   File : services/driver-service/internal/service/service.go : 190-194
+   (Both services are identical)
+
+   ForgotPassword returns different responses depending on whether the email
+   exists in the database:
+     - Email not found → 400 "no account found with that email"
+     - Email found     → 202 "OTP sent to <email>"
+
+   A script can enumerate your entire user base by checking which emails return
+   202 vs 400.
+
+   Fix: Always return the same response regardless of outcome:
+     202 "If an account with that email exists, an OTP has been sent."
+   Then internally send the OTP only if the account exists.
+
+--------------------------------------------------------------------------------
+
+C-4. DRIVER GETBYID HITS DATABASE BEFORE CHECKING OWNERSHIP
+   File : services/driver-service/internal/controllers/handler.go : 206-218
+
+   Current order:
+     1. h.svc.GetByID(r.Context(), id)   <- DB query always happens
+     2. if claims.UserID != d.ID         <- auth check after
+
+   If the driver ID does not exist, the DB returns quickly. If it exists,
+   the query takes longer. Response-time differences allow an attacker to
+   enumerate which driver IDs are valid without authentication.
+
+   Compare with user-service GetProfile (handler.go:180-194), which correctly
+   checks `claims.UserID != id` BEFORE hitting the database.
+
+   Fix: Mirror the user-service pattern — check the URL param against
+   `claims.UserID` first, return 403 immediately if they don't match, only
+   then query the DB.
+
+--------------------------------------------------------------------------------
+
+C-5. TLS CERTIFICATE VERIFICATION DISABLED FOR KAFKA
+   File : shared/pkg/kafka/client.go : 38-43
+
+   `InsecureSkipVerify: true` is set in buildTLSConfig(). The comment explains
+   it is because Aiven's CA cert has a duplicate OID that Go 1.20+ rejects.
+
+   This means: the TCP stream is encrypted but the server's identity is NOT
+   verified. A network-level attacker (e.g. on the same Render internal network
+   or via DNS spoofing) could intercept all Kafka traffic.
+
+   Fix: The correct solution is to load Aiven's CA certificate from the
+   KAFKA_CA_CERT env var into a custom cert pool and set RootCAs on the
+   TLS config, rather than skipping verification entirely. The MEMORY.md notes
+   the env var is already set; the code just needs to use it:
+
+     pool := x509.NewCertPool()
+     pool.AppendCertsFromPEM(caBytes)
+     return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool}
+
+   The current code has the env var plumbing for the cert (buildTLSConfig
+   is noted in MEMORY.md) but the implementation skips verification instead
+   of loading the cert.
+
+================================================================================
+  SECTION 2 — HIGH SEVERITY (fix before scaling or production hardening)
+================================================================================
+
+H-1. NO HTTP SERVER TIMEOUTS ON ANY SERVICE
+   File : services/*/cmd/main.go (all 5 services, identical pattern)
+
+   Every service creates:
+     srv := &http.Server{Addr: ":" + cfg.Port, Handler: r}
+
+   Missing: ReadTimeout, WriteTimeout, IdleTimeout, MaxHeaderBytes.
+
+   Impact: A client can hold a connection open indefinitely. Under load this
+   exhausts goroutines and file descriptors. Slowloris-style DoS becomes trivial.
+
+   Fix (apply to all 5 services):
+     srv := &http.Server{
+       Addr:           ":" + cfg.Port,
+       Handler:        r,
+       ReadTimeout:    15 * time.Second,
+       WriteTimeout:   15 * time.Second,
+       IdleTimeout:    60 * time.Second,
+       MaxHeaderBytes: 1 << 20,
+     }
+
+--------------------------------------------------------------------------------
+
+H-2. NO REQUEST BODY SIZE LIMIT ON ANY ENDPOINT
+   File : services/*/internal/controllers/handler.go (all handlers)
+
+   `json.NewDecoder(r.Body).Decode(...)` is used everywhere with no body size
+   limit. A client can send a multi-gigabyte body and the server will try to
+   decode it, consuming memory and goroutines.
+
+   Fix: Add `http.MaxBytesReader` in a middleware or at the top of each handler:
+     r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+
+   A chi middleware applied at the router level is cleaner:
+     r.Use(func(next http.Handler) http.Handler {
+       return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+         r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+         next.ServeHTTP(w, r)
+       })
+     })
+
+--------------------------------------------------------------------------------
+
+H-3. CORS WILDCARD ON ALL SERVICES
+   File : services/*/cmd/main.go (all services)
+
+   AllowedOrigins: []string{"*"} is hardcoded in every service. In production
+   any website can make cross-origin requests to the API. Even though
+   AllowCredentials is false (which prevents cookie-based CSRF), this still
+   leaks API availability and allows data extraction from public endpoints.
+
+   Fix: Read allowed origins from the environment:
+     AllowedOrigins: strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+
+   trip-service already reads AllowedOrigins from config for its WebSocket hub
+   (trip-service/config/config.go), but the HTTP CORS middleware still uses "*".
+   Make it consistent.
+
+--------------------------------------------------------------------------------
+
+H-4. SIMULATE-SUCCESS ENDPOINT REACHABLE IN PRODUCTION
+   File : services/payment-service/internal/controllers/handler.go : 57,148-172
+
+   POST /payments/simulate-success allows any authenticated rider/driver to
+   mark a payment as COMPLETED without actual payment, with only a basic
+   ownership check. This is a test endpoint used in demo mode.
+
+   In production, a rider can pay zero rupees by hitting this endpoint.
+
+   Fix: Gate this endpoint behind a config flag:
+     if cfg.AllowSimulate {
+       r.Post("/simulate-success", h.Simulate)
+     }
+   Default AllowSimulate to false; set it only in dev/staging.
+
+================================================================================
+  SECTION 3 — MEDIUM BUGS (real behavioural bugs)
+================================================================================
+
+M-1. SURGE MULTIPLIER NOT APPLIED WHEN ENDING A TRIP
+   File : services/trip-service/internal/service/service.go : 160 vs 276
+
+   Estimate (line 276): fare = calcFare(km, vehicleType) * surge   <- correct
+   End     (line 160):  fare = calcFare(km, trip.VehicleType)       <- BUG
+
+   Surge is shown to the rider in the estimate but not applied to the actual
+   charge. The rider is told "₹500" but charged "₹300" when surge is 1.5x.
+   This is revenue loss.
+
+   Fix: In End(), fetch the current surge and apply it:
+     surge := s.redis.GetSurge(ctx)
+     fare := calcFare(km, trip.VehicleType) * surge
+
+   Note: Surge should ideally be locked to the trip at request time (stored
+   in the trips table), not re-fetched at trip end. Otherwise a rider who
+   requested during surge can end the trip after surge drops and pay less.
+   The most correct fix is to persist the surge multiplier on the trip row
+   at request time.
+
+--------------------------------------------------------------------------------
+
+M-2. GOROUTINE LEAK IN MATCHING SERVICE RETRY LOGIC
+   File : services/matching-service/internal/service/matcher.go : 102-108
+
+   When no drivers are found, a goroutine is spawned that sleeps for 60 seconds
+   then re-publishes to Kafka using `context.Background()`. This goroutine
+   ignores the service's shutdown context.
+
+   During a graceful shutdown:
+   - The main context is cancelled
+   - Kafka client and Redis client are closed
+   - The sleeping goroutine wakes up and tries to publish, causing a panic
+     or error on the closed Kafka writer
+
+   With sustained no-match traffic (e.g. 5 retries × many trips), this
+   creates many leaking goroutines.
+
+   Fix:
+     go func(retryEv kafka.RideRequestedEvent) {
+       select {
+       case <-ctx.Done():
+         return
+       case <-time.After(retryDelay):
+       }
+       pub.Publish(ctx, kafka.TopicRideRequested, retryEv.TripID, retryEv)
+     }(ev)
+
+   The same fix applies to the timeout goroutine in matcher.go:183-197.
+
+--------------------------------------------------------------------------------
+
+M-3. PAYMENT REPOSITORY Create() SILENTLY RETURNS nil ON DUPLICATE
+   File : services/payment-service/internal/repositories/repository.go : 58-68
+   File : services/payment-service/internal/service/service.go : 56-62
+
+   The Create() method uses ON CONFLICT DO NOTHING and returns (nil, nil) if
+   the row already exists. The service then re-fetches the existing payment
+   via FindByTripID. This means:
+
+   - The returned payment might be in any status (COMPLETED, FAILED, etc.)
+   - InitPayment then tries to call MarkAwaitingCashConfirm on a COMPLETED
+     payment, which silently does nothing (no rows affected) but returns no error
+   - The caller gets back a COMPLETED payment with the cash flow applied on top
+
+   This is an idempotency hack that obscures state transitions. The status
+   mismatch is subtle and only visible under retry conditions.
+
+   Fix: Return a sentinel error or flag when the conflict fires (e.g. ErrAlreadyExists),
+   so the service can explicitly decide whether to proceed or return the existing
+   record without attempting further state mutations.
+
+--------------------------------------------------------------------------------
+
+M-4. OTP RATE LIMIT RACE: INCR AND EXPIRE ARE NOT ATOMIC
+   File : shared/pkg/otp/otp.go : 34-38,53-57
+
+   The Lua script (luaIncrRate) does INCR + EXPIRE in a single atomic script.
+   This is correct for rate limiting. However in incrAttempts (lines 107-114),
+   the pattern is different:
+     c.rdb.Incr(ctx, key)   <- separate command
+     c.rdb.Expire(ctx, key, attemptsTTL)  <- separate command, error ignored
+
+   Between INCR and EXPIRE, a crash or network partition leaves the attempts
+   key with no TTL. This means a failed OTP attempt counter can persist forever,
+   permanently locking an email from ever verifying again.
+
+   Fix: Use a Lua script or pipeline for incrAttempts, same as luaIncrRate:
+     local count = redis.call('INCR', KEYS[1])
+     redis.call('EXPIRE', KEYS[1], ARGV[1])
+     return count
+
+   Also, errors from Expire should not be ignored.
+
+--------------------------------------------------------------------------------
+
+M-5. TRIP CANCELLATION DOES NOT RESTORE DRIVER STATUS IN POSTGRES
+   File : services/trip-service/internal/service/service.go : 207-254
+
+   When a trip is cancelled, the service restores the driver to the GEO pool
+   (Redis) by calling SetDriverLocation (lines 231-233). But it does NOT update
+   the driver's status in Postgres back to "available".
+
+   The driver remains in status "busy" in Postgres. When the driver calls
+   GET /drivers/{id}, they see status=busy. If the driver calls
+   PATCH /drivers/{id}/status with "available", their Postgres row updates,
+   but in the meantime the driver appears busy to any system reading from DB.
+
+   Fix: After trip cancellation, publish a Kafka event that driver-service
+   consumes to set the driver's DB status back to "available". Or add an
+   explicit driver-status REST call from trip-service to driver-service
+   on cancellation.
+
+================================================================================
+  SECTION 4 — LOW / CODE QUALITY
+================================================================================
+
+L-1. writeJSON DUPLICATED IN ALL 5 HANDLER FILES
+   Files:
+     services/user-service/internal/controllers/handler.go : 243
+     services/driver-service/internal/controllers/handler.go : 372
+     services/trip-service/internal/controllers/handler.go : 369
+     services/payment-service/internal/controllers/handler.go : 221
+     services/notification-service/internal/controllers/handler.go : 78
+
+   Identical function in 5 places. Any change (e.g. add error logging) requires
+   touching 5 files.
+
+   Fix: Create shared/pkg/httputil/response.go with an exported WriteJSON.
+
+--------------------------------------------------------------------------------
+
+L-2. parsePagination DUPLICATED IN 3 HANDLER FILES
+   Files:
+     services/trip-service/internal/controllers/handler.go : 320
+     services/payment-service/internal/controllers/handler.go : 200
+     services/notification-service/internal/controllers/handler.go : 56
+
+   Same limits, same logic, 3 copies.
+
+   Fix: Move to shared/pkg/httputil/pagination.go.
+
+--------------------------------------------------------------------------------
+
+L-3. RequireCheckoutAuth IS IDENTICAL TO RequireAuth
+   File : shared/pkg/jwt/jwt.go : 150-159
+
+   RequireCheckoutAuth and RequireAuth have exactly the same body. The intent
+   was presumably to allow checkout tokens (type="checkout") but the
+   implementation checks `TokenType == "refresh"` in both — meaning
+   checkout tokens would be rejected by RequireCheckoutAuth too, and the
+   distinction does nothing.
+
+   Fix: Either:
+   (a) Delete RequireCheckoutAuth and use RequireAuth everywhere, or
+   (b) Implement the actual intent: allow "access" and "checkout" tokens,
+       reject "refresh":
+         if claims == nil || (claims.TokenType != "access" && claims.TokenType != "checkout") {
+
+--------------------------------------------------------------------------------
+
+L-4. INTERNAL_SECRET BYPASS WHEN EMPTY
+   File : services/trip-service/internal/controllers/handler.go : 90-96
+
+   requireInternalSecret allows all requests when internalSecret is "":
+     if h.internalSecret != "" && r.Header.Get(...) != h.internalSecret {
+
+   In the docker-compose.yml, INTERNAL_SECRET is set as `${INTERNAL_SECRET:-}`
+   (empty default). If the env var is missing in local dev or staging, the
+   PATCH /{id}/assign endpoint is unprotected — any client can assign any
+   driver to any trip.
+
+   Fix: Fail-closed: if internalSecret is empty, block all requests and log
+   a warning instead of allowing all:
+     if h.internalSecret == "" {
+       log.Printf("[WARN] INTERNAL_SECRET is not set — blocking all assign requests")
+       writeJSON(w, http.StatusServiceUnavailable, ...)
+       return
+     }
+
+--------------------------------------------------------------------------------
+
+L-5. KAFKA CONSUMER CLOSURES CAPTURE main() CONTEXT
+   File : services/user-service/cmd/main.go : 68-85
+   File : services/notification-service/cmd/main.go : 63-166
+
+   Kafka subscription callbacks pass the top-level `ctx` (created in main)
+   to repo operations inside the closure. When shutdown starts, `cancel()` is
+   called, which cancels `ctx`. In-flight Kafka messages whose handlers call
+   `repo.UpdateRating(ctx, ...)` or `repo.Create(ctx, ...)` will have their
+   DB operations cancelled mid-execution, potentially leaving partial writes.
+
+   The Kafka client uses `ctx` for FetchMessage; once cancelled, the consumer
+   loop exits cleanly. But the handler lambda captures the same ctx and uses
+   it for DB operations — the DB call may get context.Canceled mid-INSERT.
+
+   Fix: Use a separate long-lived context for DB operations inside handlers:
+     kafkaClient.Subscribe(ctx, topic, group, func(data []byte) error {
+       // Use context.Background() or a separate non-cancellable ctx for DB ops
+       dbCtx, dbCancel := context.WithTimeout(context.Background(), 10*time.Second)
+       defer dbCancel()
+       return repo.UpdateRating(dbCtx, id, score)
+     })
+
+--------------------------------------------------------------------------------
+
+L-6. GETEARNINGS "ALL TIME" USES ZERO TIME (year 0001)
+   File : services/payment-service/internal/service/service.go : 240-243
+
+   When period is not "week" or "month":
+     from = time.Time{} // zero value = January 1, year 1
+
+   The SQL query then does:
+     AND completed_at >= '0001-01-01T00:00:00Z'
+
+   This is a full table scan on the payments table for all time, with no index
+   benefit for `from`. As the table grows, this will be slow.
+
+   Fix: Either set a sensible maximum lookback (e.g. 2 years) or paginate
+   the earnings query rather than returning all records.
+
+--------------------------------------------------------------------------------
+
+L-7. TRIP-SERVICE STUCK-TRIP POLLER LOG MESSAGE IS WRONG
+   File : services/trip-service/cmd/main.go : 128
+
+   Log says: "cancelled stuck trip %s (no driver after 5 min)"
+   But FindStuckTrips uses: olderThan: 10*time.Minute
+
+   The log message says "5 min" but the threshold is 10 minutes.
+
+   Fix: Update log message:
+     "cancelled stuck trip %s (no driver after 10 min)"
+
+--------------------------------------------------------------------------------
+
+L-8. NOTIFICATION-SERVICE SUBSCRIBES TO ride.requested TO NOTIFY RIDER
+   File : services/notification-service/cmd/main.go : 74-81
+
+   The notification service subscribes to ride.requested and sends the rider
+   a "Your ride is being matched" notification on every redelivery of that
+   event. If matching retries (up to 5 times, each re-publishing to
+   ride.requested), the rider gets up to 5 "Your ride is being matched"
+   notifications for a single trip.
+
+   The idempotency_key is `trip_id + rider_id + "ride_requested"` which deduplicates
+   within one notification consumer instance. But the key is the same for all
+   retries, so ON CONFLICT handles it correctly — this is actually fine.
+   The notification is deduplicated. No action needed, just a note.
+
+   (However, verify the Kafka consumer group "notif-ride-requested" has a single
+   instance. If multiple instances run, the first to commit wins and subsequent
+   attempts will hit the ON CONFLICT correctly.)
+
+================================================================================
+  SECTION 5 — ARCHITECTURE OBSERVATIONS
+================================================================================
+
+A-1. KAFKA TOPIC INCONSISTENCY
+   trip.completed is published to its own dedicated topic (TopicTripCompleted)
+   while trip.cancelled, rating.submitted, and payment.completed are all
+   multiplexed via the ridego.events envelope topic.
+
+   This means every consumer of ridego.events must deserialise every event
+   even if they only care about one type. The notification service has a
+   switch statement on env.Type to handle this. The user/driver rating update
+   also filters on env.Type. As the number of event types grows, this becomes
+   unwieldy.
+
+   Suggestion: Either move everything to dedicated topics (simple, clear
+   ownership), or move trip.completed to the envelope topic too for consistency.
+   Mixing both patterns is the worst of both worlds.
+
+--------------------------------------------------------------------------------
+
+A-2. DRIVER STATUS IS SPLIT BETWEEN POSTGRES AND REDIS
+   The driver's status field exists in Postgres (source of truth) AND is
+   implicitly represented in Redis via GEO set membership (available = in set,
+   not-available = not in set). These two can diverge:
+
+   Scenario: Driver sets status=available → added to GEO set in Redis.
+   Kafka partition rebalance → Kafka delivers driver.assigned twice.
+   Trip-service calls AssignDriver twice. Second call returns 0 rows affected
+   (trip already in DRIVER_ASSIGNED state). Postgres trip is fine. But the
+   driver's GEO entry has already been removed and their lock already deleted.
+   The driver is in an inconsistent state between Redis and Postgres.
+
+   The matching service and driver service have compensating logic to restore
+   GEO entries on cancel/reject, but this is complex state management that is
+   hard to reason about.
+
+   Suggestion: Add a reconciliation job or use Redis as pure cache with
+   Postgres as the single source of truth for driver status. On cache miss,
+   fall back to Postgres.
+
+--------------------------------------------------------------------------------
+
+A-3. REFRESH TOKEN IS NOT REVOCABLE
+   File : shared/pkg/jwt/jwt.go
+
+   Refresh tokens are signed JWTs with 7-day TTL. There is no token blacklist
+   or revocation mechanism. If a user's refresh token is compromised, it
+   remains valid for 7 days with no way to invalidate it short of changing
+   the global JWT_SECRET (which invalidates all users).
+
+   Suggestion: For a ridesharing app with financial transactions, store refresh
+   token IDs in Redis with their TTL. On /refresh, validate that the token ID
+   is still in the store. On logout, delete it. This is a standard pattern
+   and the Redis infrastructure is already in place.
+
+================================================================================
+  SUMMARY TABLE
+================================================================================
+
+Priority  | ID   | Area             | File (short)                  | Issue
+----------|------|------------------|-------------------------------|---------------------------
+CRITICAL  | C-1  | Auth             | payment-service/hub/hub.go    | WebSocket no auth/CORS
+CRITICAL  | C-2  | Auth             | payment-service/checkout.go   | JWT token in URL
+CRITICAL  | C-3  | Auth             | user+driver service/service   | User enumeration via forgot-password
+CRITICAL  | C-4  | Auth             | driver-service/handler.go     | DB hit before auth check (timing)
+CRITICAL  | C-5  | TLS              | shared/pkg/kafka/client.go    | InsecureSkipVerify=true
+HIGH      | H-1  | DoS              | */cmd/main.go                 | No HTTP server timeouts
+HIGH      | H-2  | DoS              | */controllers/handler.go      | No request body size limit
+HIGH      | H-3  | CORS             | */cmd/main.go                 | Wildcard CORS on all services
+HIGH      | H-4  | Fraud            | payment-service/handler.go    | Simulate endpoint in production
+MEDIUM    | M-1  | Bug              | trip-service/service.go       | Surge not applied in End()
+MEDIUM    | M-2  | Goroutine Leak   | matching-service/matcher.go   | Retry goroutine ignores shutdown ctx
+MEDIUM    | M-3  | Data Integrity   | payment-service/repository    | Silent nil return on duplicate payment
+MEDIUM    | M-4  | Race Condition   | shared/pkg/otp/otp.go         | INCR+EXPIRE not atomic in incrAttempts
+MEDIUM    | M-5  | Data Integrity   | trip-service/service.go       | Driver Postgres status not reset on cancel
+LOW       | L-1  | Code Quality     | 5 handler files               | writeJSON duplicated 5x
+LOW       | L-2  | Code Quality     | 3 handler files               | parsePagination duplicated 3x
+LOW       | L-3  | Code Quality     | shared/pkg/jwt/jwt.go         | RequireCheckoutAuth identical to RequireAuth
+LOW       | L-4  | Security         | trip-service/handler.go       | Internal secret bypass when empty
+LOW       | L-5  | Concurrency      | */cmd/main.go                 | Kafka handlers capture cancellable ctx
+LOW       | L-6  | Performance      | payment-service/service.go    | Full table scan for "all time" earnings
+LOW       | L-7  | Observability    | trip-service/cmd/main.go      | Wrong time in stuck-trip log message
+ARCH      | A-1  | Consistency      | shared/pkg/kafka/events.go    | Kafka topic strategy inconsistent
+ARCH      | A-2  | State Mgmt       | driver-service + Redis        | Driver status split between Postgres and Redis
+ARCH      | A-3  | Auth             | shared/pkg/jwt/jwt.go         | Refresh tokens not revocable
+
+================================================================================
+  WHAT IS DONE WELL (genuine positives)
+================================================================================
+
++ OTP is SHA-256 hashed before storage (otp.go:66,125-127) — correct
++ OTP uses crypto/rand for generation (otp.go:118) — correct
++ OTP rate limiting uses a Lua script for atomic INCR+EXPIRE (otp.go:34-38) — correct
++ Kafka consumer commits ONLY after successful handler (kafka/client.go:185-190) — correct
++ Trip state transitions use WHERE status=$n guards in SQL — correct, idempotent
++ OTP verification uses subtle.ConstantTimeCompare (otp.go:98) — timing-safe — correct
++ Password hashing uses bcrypt with DefaultCost — correct
++ Internal service-to-service calls use X-Internal-Secret header — correct separation
++ Driver ID enumeration is partially mitigated in user-service (GetProfile checks
+  claims before DB hit) — good pattern, just inconsistent across services
++ Kafka writer reuse via sync.Map (kafka/client.go:73-88) — correct, avoids TLS
+  handshake on every publish
++ Notification idempotency via idempotency_key + ON CONFLICT — correct
++ Rating uses ON CONFLICT DO NOTHING with fallback SELECT — idempotent — correct
++ Gorilla WebSocket writes use per-connection mutex (tracking/hub.go:16-25) — correct
++ Docker multi-stage build produces minimal alpine images — good
++ Graceful shutdown pattern (SIGTERM → server.Shutdown) in all services — correct
+
+================================================================================
+  RECOMMENDED IMMEDIATE ACTION ORDER
+================================================================================
+
+1. Fix C-3 (user enumeration) — 10 minutes, one line change each service
+2. Fix C-4 (driver timing attack) — 15 minutes, reorder 3 lines
+3. Fix H-4 (simulate in production) — 20 minutes, add config flag
+4. Fix L-4 (internal secret bypass) — 10 minutes, flip the condition
+5. Fix M-1 (surge not applied) — 10 minutes, add one redis call in End()
+6. Fix H-1 (HTTP server timeouts) — 20 minutes, add 4 fields to each http.Server
+7. Fix H-2 (request body limit) — 20 minutes, add one middleware
+8. Fix M-2 (goroutine leak) — 30 minutes, add ctx.Done() select
+9. Fix C-1 (WebSocket no auth) — 1 hour, copy pattern from tracking hub
+10. Fix C-2 (token in URL) — 2 hours, redesign checkout token flow
+11. Fix C-5 (TLS skip verify) — 2 hours, load KAFKA_CA_CERT properly
+12. Refactor L-1, L-2, L-3 — extract shared utilities
+
+================================================================================
