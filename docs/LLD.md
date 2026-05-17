@@ -201,7 +201,7 @@ All services share a single Upstash Redis instance. Keys are namespaced by prefi
 | `offer:req:{tripID}` | string (JSON) | 20s | matching-service | Original `ride.requested` event; used to re-queue if driver rejects/times out |
 | `surge:multiplier` | string (float) | — | trip-service | Current surge multiplier (1.0–5.0); read on every fare calculation |
 | `trip:otp:{tripID}` | string (4-digit) | 2h | trip-service | Ride confirmation OTP; deleted on successful start |
-| OTP keys | managed by `shared/pkg/otp` | 5m | user-service, driver-service | 6-digit login OTPs |
+| OTP keys | managed by `shared/pkg/otp` | 5m | user-service, driver-service | 6-digit registration OTPs |
 
 ---
 
@@ -524,21 +524,30 @@ HMAC-SHA256(provider_order_id + "|" + provider_payment_id, RAZORPAY_KEY_SECRET)
 
 ## 8. OTP Flows
 
-### 8.1 Login OTP (6-digit)
+### 8.1 Registration OTP (6-digit)
 
 ```
-POST /users/login  { email, password }
-  └─► bcrypt.CompareHashAndPassword
+POST /users/register  { name, email, phone, password }
+  └─► bcrypt hash password
+  └─► store pendingRegistration as JSON → Redis SET pending_reg:{email} {data} EX 600
   └─► otp.Send(email) → random 6-digit code → Redis SET otp:{email} {code} EX 300
   └─► Brevo email: "Your RideGo OTP is 123456"
+  └─► 202 { message: "OTP sent to {email}" }
 
-POST /users/verify-login  { email, otp }
-  └─► Redis GET otp:{email}
-  └─► increment attempt counter; reject after 5 failures
-  └─► on match: DEL key, issue JWT access + refresh tokens
+POST /users/verify-register  { email, otp }
+  └─► otp.VerifyOTP(email, otp)
+  └─► Redis GETDEL pending_reg:{email}  (atomic get + delete)
+  └─► create user record in Postgres
+  └─► issue JWT access + refresh tokens
+  └─► 201 { access_token, refresh_token, user }
+
+POST /users/login  { email, password }
+  └─► bcrypt.CompareHashAndPassword
+  └─► issue JWT access + refresh tokens directly
+  └─► 200 { access_token, refresh_token, user }
 ```
 
-TTL: **5 minutes**. Max attempts: **5** (enforced by `shared/pkg/otp`).
+Registration TTL: **10 minutes** for pending_reg key, **5 minutes** for OTP key. Max OTP attempts: **5** (enforced by `shared/pkg/otp`).
 
 ### 8.2 Ride OTP (4-digit)
 
@@ -566,9 +575,9 @@ TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed
 
 | Method | Path | Auth | Body | Response |
 |---|---|---|---|---|
-| POST | `/users/register` | — | `{name, email, phone, password}` | `201 {access_token, refresh_token, user}` |
-| POST | `/users/login` | — | `{email, password}` | `202 {message}` |
-| POST | `/users/verify-login` | — | `{email, otp}` | `200 {access_token, refresh_token, user}` |
+| POST | `/users/register` | — | `{name, email, phone, password}` | `202 {message: "OTP sent"}` |
+| POST | `/users/verify-register` | — | `{email, otp}` | `201 {access_token, refresh_token, user}` |
+| POST | `/users/login` | — | `{email, password}` | `200 {access_token, refresh_token, user}` |
 | POST | `/users/refresh` | — | `{refresh_token}` | `200 {access_token, refresh_token}` |
 | GET | `/users/{id}` | Bearer (rider, IDOR) | — | `200 {user}` |
 
@@ -576,9 +585,9 @@ TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed
 
 | Method | Path | Auth | Body | Response |
 |---|---|---|---|---|
-| POST | `/drivers/register` | — | `{name, email, phone, password, vehicle_type, license_plate}` | `201 {access_token, refresh_token, driver}` |
-| POST | `/drivers/login` | — | `{email, password}` | `202 {message}` |
-| POST | `/drivers/verify-login` | — | `{email, otp}` | `200 {access_token, refresh_token, driver}` |
+| POST | `/drivers/register` | — | `{name, email, phone, password, vehicle_type, license_plate}` | `202 {message: "OTP sent"}` |
+| POST | `/drivers/verify-register` | — | `{email, otp}` | `201 {access_token, refresh_token, driver}` |
+| POST | `/drivers/login` | — | `{email, password}` | `200 {access_token, refresh_token, driver}` |
 | POST | `/drivers/refresh` | — | `{refresh_token}` | `200 {access_token, refresh_token}` |
 | GET | `/drivers/{id}` | Bearer (driver, IDOR) | — | `200 {driver}` |
 | PATCH | `/drivers/{id}/status` | Bearer (driver) | `{status}` | `200 {id, status}` |
