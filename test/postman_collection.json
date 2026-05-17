@@ -135,6 +135,162 @@
               }
             }
           ]
+        },
+        {
+          "name": "User Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://user-service-kkxa.onrender.com/health",
+              "protocol": "https",
+              "host": ["user-service-kkxa.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the user-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('User service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://driver-service-uqbi.onrender.com/health",
+              "protocol": "https",
+              "host": ["driver-service-uqbi.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the driver-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Driver service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Trip Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://trip-service-8j8x.onrender.com/health",
+              "protocol": "https",
+              "host": ["trip-service-8j8x.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the trip-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Trip service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Notification Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://notification-service-ftxu.onrender.com/health",
+              "protocol": "https",
+              "host": ["notification-service-ftxu.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the notification-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Notification service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payment Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://payment-service-91bl.onrender.com/health",
+              "protocol": "https",
+              "host": ["payment-service-91bl.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the payment-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Payment service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Matching Service Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://matching-service-5bxa.onrender.com/health",
+              "protocol": "https",
+              "host": ["matching-service-5bxa.onrender.com"],
+              "path": ["health"]
+            },
+            "description": "Direct health check to wake up the matching-service on cold start."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Matching service healthy', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
@@ -984,7 +1140,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245\n}"
+              "raw": "{\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/estimate",
@@ -1039,7 +1195,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pickupLat\": 12.9716,\n  \"pickupLng\": 77.5946,\n  \"dropLat\": 12.9352,\n  \"dropLng\": 77.6245,\n  \"payment_method\": \"upi\"\n}"
+              "raw": "{\n  \"pickup_lat\": 12.9716,\n  \"pickup_lng\": 77.5946,\n  \"drop_lat\": 12.9352,\n  \"drop_lng\": 77.6245,\n  \"payment_method\": \"upi\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/request",
@@ -1158,7 +1314,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"driverId\": \"{{driver_id}}\"\n}"
+              "raw": "{\n  \"driver_id\": \"{{driver_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/trips/{{trip_id}}/assign",
