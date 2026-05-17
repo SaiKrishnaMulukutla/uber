@@ -75,3 +75,13 @@ type UpdateRequest struct {
 	VehicleType  string `json:"vehicle_type"`
 	LicensePlate string `json:"license_plate"`
 }
+
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+type ResetPasswordRequest struct {
+	Email       string `json:"email"`
+	OTP         string `json:"otp"`
+	NewPassword string `json:"new_password"`
+}
