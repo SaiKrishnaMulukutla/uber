@@ -20,6 +20,7 @@ type DriverRepository interface {
 	UpdateRating(ctx context.Context, driverID string, score int) error
 	Update(ctx context.Context, id, name, phone, vehicleType, licensePlate string) (*model.Driver, error)
 	UpdatePassword(ctx context.Context, id, hash string) error
+	GetAvailableDriverIDs(ctx context.Context) ([]string, error)
 }
 
 type pgDriverRepository struct{ pool *pgxpool.Pool }
@@ -128,4 +129,23 @@ func (r *pgDriverRepository) UpdateRating(ctx context.Context, driverID string, 
 		   rating = rating + ($1::float - rating) / (rating_count + 1)
 		 WHERE id = $2`, score, driverID)
 	return err
+}
+
+// GetAvailableDriverIDs returns the IDs of all drivers currently marked available in Postgres.
+// Used during startup reconciliation to re-populate the Redis GEO set.
+func (r *pgDriverRepository) GetAvailableDriverIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id FROM drivers WHERE status = 'available'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

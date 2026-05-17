@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/mailer"
+	rredis "uber/shared/pkg/redis"
 	"uber/user-service/internal/model"
 	"uber/user-service/internal/repositories"
 )
@@ -47,12 +47,12 @@ type pendingRegistration struct {
 type userService struct {
 	repo   repositories.UserRepository
 	otp    OTPClient
-	rdb    goredis.UniversalClient
+	redis  *rredis.Client
 	mailer mailer.Mailer
 }
 
-func NewService(repo repositories.UserRepository, otp OTPClient, rdb goredis.UniversalClient, m mailer.Mailer) UserService {
-	return &userService{repo: repo, otp: otp, rdb: rdb, mailer: m}
+func NewService(repo repositories.UserRepository, otp OTPClient, redis *rredis.Client, m mailer.Mailer) UserService {
+	return &userService{repo: repo, otp: otp, redis: redis, mailer: m}
 }
 
 // Register validates input, stores pending data in Redis, and sends an OTP.
@@ -79,7 +79,7 @@ func (s *userService) Register(ctx context.Context, req model.RegisterRequest) e
 	if err != nil {
 		return fmt.Errorf("register: marshal: %w", err)
 	}
-	if err := s.rdb.Set(ctx, "pending_reg:"+req.Email, data, pendingRegTTL).Err(); err != nil {
+	if err := s.redis.RDB().Set(ctx, "pending_reg:"+req.Email, data, pendingRegTTL).Err(); err != nil {
 		return fmt.Errorf("register: store: %w", err)
 	}
 
@@ -92,7 +92,7 @@ func (s *userService) VerifyRegister(ctx context.Context, req model.VerifyRegist
 		return nil, err
 	}
 
-	data, err := s.rdb.GetDel(ctx, "pending_reg:"+req.Email).Bytes()
+	data, err := s.redis.RDB().GetDel(ctx, "pending_reg:"+req.Email).Bytes()
 	if err != nil {
 		return nil, errors.New("registration session expired — please register again")
 	}
@@ -109,6 +109,9 @@ func (s *userService) VerifyRegister(ctx context.Context, req model.VerifyRegist
 	pair, err := jwt.GenerateTokenPair(id, pending.Email, pending.Phone, "rider")
 	if err != nil {
 		return nil, err
+	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
 	}
 
 	if s.mailer != nil {
@@ -137,6 +140,9 @@ func (s *userService) Login(ctx context.Context, req model.LoginRequest) (*model
 	if err != nil {
 		return nil, err
 	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
+	}
 	return &model.AuthResponse{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken, User: u}, nil
 }
 
@@ -148,9 +154,16 @@ func (s *userService) Refresh(ctx context.Context, refreshToken string) (*model.
 	if claims.Role != "rider" {
 		return nil, errors.New("invalid token role")
 	}
+	if !s.redis.IsRefreshTokenValid(ctx, claims.ID) {
+		return nil, errors.New("refresh token has been revoked")
+	}
+	s.redis.RevokeRefreshToken(ctx, claims.ID)
 	pair, err := jwt.GenerateTokenPair(claims.UserID, claims.Email, claims.Phone, claims.Role)
 	if err != nil {
 		return nil, err
+	}
+	if rc, rcErr := jwt.ValidateRefreshToken(pair.RefreshToken); rcErr == nil {
+		_ = s.redis.StoreRefreshToken(ctx, rc.ID, 7*24*time.Hour)
 	}
 	return &model.RefreshResponse{AccessToken: pair.AccessToken, RefreshToken: pair.RefreshToken}, nil
 }
@@ -167,14 +180,16 @@ func (s *userService) Update(ctx context.Context, id string, req model.UpdateReq
 	return s.repo.Update(ctx, id, req.Name, req.Phone)
 }
 
-// ForgotPassword verifies the email exists and sends an OTP for password reset.
+// ForgotPassword sends a password-reset OTP if the email is registered.
+// When the email is not found we return nil (no error) so the response is
+// identical to the success case — preventing account enumeration.
 func (s *userService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
 	exists, err := s.repo.EmailExists(ctx, req.Email)
 	if err != nil {
 		return err
 	}
 	if !exists {
-		return errors.New("no account found with that email")
+		return nil
 	}
 	return s.otp.SendOTP(ctx, req.Email)
 }

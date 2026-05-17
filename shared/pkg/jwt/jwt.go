@@ -2,6 +2,8 @@ package jwt
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,17 +69,25 @@ func GenerateTokenPair(userID, email, phone, role string) (*TokenPair, error) {
 }
 
 func generateToken(userID, email, phone, role, tokenType string, duration time.Duration) (string, error) {
+	reg := gojwt.RegisteredClaims{
+		Subject:   userID,
+		IssuedAt:  gojwt.NewNumericDate(time.Now()),
+		ExpiresAt: gojwt.NewNumericDate(time.Now().Add(duration)),
+	}
+	if tokenType == "refresh" {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("jwt: generate jti: %w", err)
+		}
+		reg.ID = hex.EncodeToString(b)
+	}
 	claims := Claims{
-		UserID:    userID,
-		Email:     email,
-		Phone:     phone,
-		Role:      role,
-		TokenType: tokenType,
-		RegisteredClaims: gojwt.RegisteredClaims{
-			Subject:   userID,
-			IssuedAt:  gojwt.NewNumericDate(time.Now()),
-			ExpiresAt: gojwt.NewNumericDate(time.Now().Add(duration)),
-		},
+		UserID:           userID,
+		Email:            email,
+		Phone:            phone,
+		Role:             role,
+		TokenType:        tokenType,
+		RegisteredClaims: reg,
 	}
 	return gojwt.NewWithClaims(gojwt.SigningMethodHS256, claims).SignedString(secret)
 }
@@ -134,11 +144,13 @@ func OptionalAuth(next http.Handler) http.Handler {
 	})
 }
 
-// RequireAuth rejects requests that have no valid JWT in context or that use a refresh token.
+// RequireAuth rejects requests that do not carry a valid "access" token.
+// Checkout and refresh tokens are explicitly rejected so that scoped tokens
+// cannot be used to call general API endpoints.
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := GetClaims(r.Context())
-		if claims == nil || claims.TokenType == "refresh" {
+		if claims == nil || claims.TokenType != "access" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}
@@ -146,11 +158,12 @@ func RequireAuth(next http.Handler) http.Handler {
 	})
 }
 
-// RequireCheckoutAuth allows access tokens and checkout tokens (but not refresh tokens).
+// RequireCheckoutAuth allows "access" and "checkout" tokens but rejects
+// "refresh" tokens. Used exclusively by payment checkout/verify endpoints.
 func RequireCheckoutAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		claims := GetClaims(r.Context())
-		if claims == nil || claims.TokenType == "refresh" {
+		if claims == nil || (claims.TokenType != "access" && claims.TokenType != "checkout") {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 			return
 		}

@@ -87,8 +87,8 @@ Build a production-style ride-hailing backend that supports:
 | Service | Port | Responsibility | DB |
 |---|---|---|---|
 | api-gateway | 8000 | nginx: reverse proxy, rate limiting, security headers, WebSocket upgrade | — |
-| user-service | 8081 | Rider registration, OTP login, profile, rating updates | `users` table |
-| driver-service | 8082 | Driver registration, OTP login, location updates, offer acceptance, rating updates | `drivers` table |
+| user-service | 8081 | Rider registration (OTP-verified), password login, forgot/reset password, profile, rating updates | `users` table |
+| driver-service | 8082 | Driver registration (OTP-verified), password login, forgot/reset password, location updates, offer acceptance, rating updates | `drivers` table |
 | trip-service | 8083 | Trip lifecycle (request → assign → start → end → cancel → rate), fare calculation, live location, surge pricing, WebSocket hub | `trips`, `ratings` tables |
 | matching-service | — | Kafka consumer only — no HTTP. Receives `ride.requested`, finds nearest available driver via Redis GEO, publishes `ride.offered` | — |
 | notification-service | 8084 | Kafka consumer — persists in-app notifications, sends HTML emails via Brevo | `notifications` table |
@@ -107,7 +107,7 @@ Build a production-style ride-hailing backend that supports:
 ### Upstash Redis
 - Single Redis instance shared across services
 - Namespaced by key prefix per concern (see LLD for full key table)
-- Primary uses: driver GEO set, distributed locks, offer state, ride OTP, surge multiplier, login OTP
+- Primary uses: driver GEO set, distributed locks, offer state, ride OTP, surge multiplier, registration OTP, password-reset OTP
 
 ### Aiven Kafka
 - 5 topics, 1 partition each (free tier)
@@ -207,19 +207,25 @@ POST /payments/simulate-success → COMPLETED immediately (no provider call)
 - **Refresh token:** 7-day TTL — used only to obtain a new access token
 - **Checkout token:** 30-minute TTL — scoped to a single payment, used for browser-based checkout flows
 
-### 2FA Login (OTP)
-- Password validates first; on success a 6-digit OTP is sent to the user's email via Brevo
-- OTP stored in Redis with 5-minute TTL; max 5 verification attempts before lockout
-- JWT tokens issued only after OTP is verified
-- Registration issues tokens immediately (no OTP — first login after expiry requires OTP)
+### Registration OTP
+- Two-step flow: `POST /register` stores pending data in Redis (10-min TTL) and sends a 6-digit OTP; `POST /verify-register` confirms the OTP and creates the account
+- JWT tokens issued only after OTP is verified — no account exists until then
+
+### Login
+- Password-only: `POST /login` validates email + password and issues JWT directly (no OTP on every login)
+
+### Forgot Password (OTP)
+- `POST /forgot-password {email}` — verifies email exists, sends 6-digit OTP via Brevo
+- `POST /reset-password {email, otp, new_password}` — verifies OTP, bcrypts new password, updates DB
+- OTP TTL: 5 minutes; max 5 attempts before lockout
 
 ### IDOR Protection
 - Every endpoint that reads or modifies a user-owned resource verifies JWT claims match the resource owner
 - No relying on URL path IDs alone
 
 ### nginx Rate Limiting
-- Auth endpoints (`/login`, `/register`, `/verify-login`, `/refresh`): 5 req/s per IP
-- All other endpoints: 30 req/s per IP
+- Auth endpoints (`/login`, `/register`, `/verify-register`, `/forgot-password`, `/reset-password`, `/refresh`): 5 req/s per IP
+- All other endpoints: 20 req/s per IP
 
 ### Service-to-Service Auth
 - matching-service → trip-service (`PATCH /trips/{id}/assign`): `X-Internal-Secret` header checked against `INTERNAL_SECRET` env var
