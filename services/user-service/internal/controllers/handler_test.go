@@ -20,12 +20,14 @@ import (
 // ---------- mock ----------
 
 type mockUserService struct {
-	RegisterFn       func(ctx context.Context, req model.RegisterRequest) error
-	VerifyRegisterFn func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
-	LoginFn          func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
-	RefreshFn        func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
-	GetByIDFn        func(ctx context.Context, id string) (*model.User, error)
-	UpdateFn         func(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
+	RegisterFn        func(ctx context.Context, req model.RegisterRequest) error
+	VerifyRegisterFn  func(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
+	LoginFn           func(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
+	RefreshFn         func(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
+	GetByIDFn         func(ctx context.Context, id string) (*model.User, error)
+	UpdateFn          func(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
+	ForgotPasswordFn  func(ctx context.Context, req model.ForgotPasswordRequest) error
+	ResetPasswordFn   func(ctx context.Context, req model.ResetPasswordRequest) error
 }
 
 func (m *mockUserService) Register(ctx context.Context, req model.RegisterRequest) error {
@@ -48,6 +50,18 @@ func (m *mockUserService) Update(ctx context.Context, id string, req model.Updat
 		return m.UpdateFn(ctx, id, req)
 	}
 	return nil, nil
+}
+func (m *mockUserService) ForgotPassword(ctx context.Context, req model.ForgotPasswordRequest) error {
+	if m.ForgotPasswordFn != nil {
+		return m.ForgotPasswordFn(ctx, req)
+	}
+	return nil
+}
+func (m *mockUserService) ResetPassword(ctx context.Context, req model.ResetPasswordRequest) error {
+	if m.ResetPasswordFn != nil {
+		return m.ResetPasswordFn(ctx, req)
+	}
+	return nil
 }
 
 // ---------- helpers ----------
