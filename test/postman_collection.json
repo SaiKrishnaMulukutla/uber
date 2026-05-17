@@ -322,7 +322,7 @@
       "name": "Users (Rider)",
       "item": [
         {
-          "name": "1. Register Rider (Step 1 — send OTP)",
+          "name": "Register Rider (Step 1 — send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -376,7 +376,7 @@
           "event": []
         },
         {
-          "name": "2. Verify Rider Registration (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Rider Registration (Step 2 — exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -439,7 +439,7 @@
           ]
         },
         {
-          "name": "3. Login Rider",
+          "name": "Login Rider",
           "request": {
             "method": "POST",
             "header": [
@@ -510,7 +510,7 @@
           ]
         },
         {
-          "name": "4. Refresh Rider Token",
+          "name": "Refresh Rider Token",
           "request": {
             "method": "POST",
             "header": [
@@ -559,7 +559,7 @@
           ]
         },
         {
-          "name": "5. Get Rider Profile",
+          "name": "Get Rider Profile",
           "request": {
             "method": "GET",
             "header": [
@@ -622,7 +622,7 @@
       "name": "Drivers",
       "item": [
         {
-          "name": "1. Register Driver (Step 1 — send OTP)",
+          "name": "Register Driver (Step 1 — send OTP)",
           "request": {
             "method": "POST",
             "header": [
@@ -676,7 +676,7 @@
           "event": []
         },
         {
-          "name": "2. Verify Driver Registration (Step 2 — exchange OTP for JWT)",
+          "name": "Verify Driver Registration (Step 2 — exchange OTP for JWT)",
           "request": {
             "method": "POST",
             "header": [
@@ -745,7 +745,7 @@
           ]
         },
         {
-          "name": "3. Login Driver",
+          "name": "Login Driver",
           "request": {
             "method": "POST",
             "header": [
@@ -816,7 +816,7 @@
           ]
         },
         {
-          "name": "4. Refresh Driver Token",
+          "name": "Refresh Driver Token",
           "request": {
             "method": "POST",
             "header": [
@@ -865,7 +865,7 @@
           ]
         },
         {
-          "name": "5. Get Driver Profile",
+          "name": "Get Driver Profile",
           "request": {
             "method": "GET",
             "header": [
@@ -911,7 +911,7 @@
           ]
         },
         {
-          "name": "6. Update Driver Status (Go Online)",
+          "name": "Update Driver Status (Go Online)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -965,7 +965,7 @@
           ]
         },
         {
-          "name": "7. Update Driver Location",
+          "name": "Update Driver Location",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1025,7 +1025,7 @@
           ]
         },
         {
-          "name": "8. Find Nearby Drivers",
+          "name": "Find Nearby Drivers",
           "request": {
             "method": "GET",
             "header": [
@@ -1073,7 +1073,7 @@
           ]
         },
         {
-          "name": "9. Respond to Ride Offer",
+          "name": "Respond to Ride Offer",
           "request": {
             "method": "POST",
             "header": [
@@ -1144,7 +1144,7 @@
       "name": "Trips",
       "item": [
         {
-          "name": "1. Estimate Fare",
+          "name": "Estimate Fare",
           "request": {
             "method": "POST",
             "header": [
@@ -1199,7 +1199,7 @@
           ]
         },
         {
-          "name": "2. Request Trip",
+          "name": "Request Trip",
           "request": {
             "method": "POST",
             "header": [
@@ -1260,7 +1260,7 @@
           ]
         },
         {
-          "name": "3. Get Trip Details",
+          "name": "Get Trip Details",
           "request": {
             "method": "GET",
             "header": [
@@ -1317,7 +1317,7 @@
           ]
         },
         {
-          "name": "4. Assign Driver (Internal Override)",
+          "name": "Assign Driver (Internal Override)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1364,7 +1364,7 @@
           ]
         },
         {
-          "name": "5. Start Trip",
+          "name": "Start Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1447,7 +1447,7 @@
           ]
         },
         {
-          "name": "6. Push Driver Location (live tracking)",
+          "name": "Push Driver Location (live tracking)",
           "request": {
             "method": "POST",
             "header": [
@@ -1503,7 +1503,7 @@
           ]
         },
         {
-          "name": "7. End Trip",
+          "name": "End Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1560,7 +1560,7 @@
           ]
         },
         {
-          "name": "8. Rate Trip",
+          "name": "Rate Trip",
           "request": {
             "method": "POST",
             "header": [
@@ -1621,7 +1621,7 @@
           ]
         },
         {
-          "name": "9. Cancel Trip",
+          "name": "Cancel Trip",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1661,7 +1661,7 @@
           ]
         },
         {
-          "name": "10. Trip History",
+          "name": "Trip History",
           "request": {
             "method": "GET",
             "header": [
@@ -1704,7 +1704,7 @@
           ]
         },
         {
-          "name": "11. Get Surge Multiplier (Admin)",
+          "name": "Get Surge Multiplier (Admin)",
           "request": {
             "method": "GET",
             "header": [
@@ -1734,7 +1734,7 @@
           ]
         },
         {
-          "name": "12. Set Surge Multiplier (Admin)",
+          "name": "Set Surge Multiplier (Admin)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -1777,7 +1777,7 @@
       "name": "Payments",
       "item": [
         {
-          "name": "1. Get Payment by Trip",
+          "name": "Get Payment by Trip",
           "request": {
             "method": "GET",
             "header": [
@@ -1834,7 +1834,7 @@
           ]
         },
         {
-          "name": "2. Open Checkout Page (UPI / Cash / Card)",
+          "name": "Open Checkout Page (UPI / Cash / Card)",
           "request": {
             "method": "GET",
             "header": [],
@@ -1854,7 +1854,7 @@
           "response": []
         },
         {
-          "name": "3. Confirm Cash Payment (Driver)",
+          "name": "Confirm Cash Payment (Driver)",
           "request": {
             "method": "POST",
             "header": [
@@ -1912,7 +1912,7 @@
           ]
         },
         {
-          "name": "4. Simulate Payment Success (dev)",
+          "name": "Simulate Payment Success (dev)",
           "request": {
             "method": "POST",
             "header": [
@@ -1971,7 +1971,7 @@
           ]
         },
         {
-          "name": "5. Create Razorpay Order",
+          "name": "Create Razorpay Order",
           "request": {
             "method": "POST",
             "header": [
@@ -2037,7 +2037,7 @@
           ]
         },
         {
-          "name": "6. Verify Razorpay Payment",
+          "name": "Verify Razorpay Payment",
           "request": {
             "method": "POST",
             "header": [
@@ -2096,7 +2096,7 @@
           ]
         },
         {
-          "name": "7. Payment History",
+          "name": "Payment History",
           "request": {
             "method": "GET",
             "header": [
@@ -2137,7 +2137,7 @@
           ]
         },
         {
-          "name": "8. Driver Earnings",
+          "name": "Driver Earnings",
           "request": {
             "method": "GET",
             "header": [
@@ -2180,7 +2180,7 @@
       "name": "Notifications",
       "item": [
         {
-          "name": "1. Get Notifications",
+          "name": "Get Notifications",
           "request": {
             "method": "GET",
             "header": [
@@ -2238,7 +2238,7 @@
           ]
         },
         {
-          "name": "2. Mark Notification as Read",
+          "name": "Mark Notification as Read",
           "request": {
             "method": "PATCH",
             "header": [
