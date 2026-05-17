@@ -18,9 +18,9 @@ import (
 var sixDigits = regexp.MustCompile(`^\d{6}$`)
 
 type UserServicer interface {
-	Register(ctx context.Context, req model.RegisterRequest) (*model.AuthResponse, error)
-	Login(ctx context.Context, req model.LoginRequest) error
-	VerifyLogin(ctx context.Context, req model.VerifyLoginRequest) (*model.AuthResponse, error)
+	Register(ctx context.Context, req model.RegisterRequest) error
+	VerifyRegister(ctx context.Context, req model.VerifyRegisterRequest) (*model.AuthResponse, error)
+	Login(ctx context.Context, req model.LoginRequest) (*model.AuthResponse, error)
 	Refresh(ctx context.Context, refreshToken string) (*model.RefreshResponse, error)
 	GetByID(ctx context.Context, id string) (*model.User, error)
 	Update(ctx context.Context, id string, req model.UpdateRequest) (*model.User, error)
@@ -34,8 +34,8 @@ func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Post("/register", h.Register)
+	r.Post("/verify-register", h.VerifyRegister)
 	r.Post("/login", h.Login)
-	r.Post("/verify-login", h.VerifyLogin)
 	r.Post("/refresh", h.Refresh)
 
 	r.Group(func(r chi.Router) {
@@ -70,15 +70,45 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
 		return
 	}
-	resp, err := h.svc.Register(r.Context(), req)
-	if err != nil {
+	if err := h.svc.Register(r.Context(), req); err != nil {
+		if errors.Is(err, otp.ErrRateLimitExceeded) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
+}
+
+// VerifyRegister confirms the OTP and creates the account, returning a JWT on success.
+func (h *Handler) VerifyRegister(w http.ResponseWriter, r *http.Request) {
+	var req model.VerifyRegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+	if !validation.ValidateEmail(req.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		return
+	}
+	if !sixDigits.MatchString(req.OTP) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
+		return
+	}
+	resp, err := h.svc.VerifyRegister(r.Context(), req)
+	if err != nil {
+		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-// Login validates credentials, sends OTP, and returns 202. No JWT yet.
+// Login validates credentials and returns a JWT directly.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req model.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -93,38 +123,8 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
 		return
 	}
-	if err := h.svc.Login(r.Context(), req); err != nil {
-		if errors.Is(err, otp.ErrRateLimitExceeded) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
-			return
-		}
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
-}
-
-// VerifyLogin confirms the OTP and returns a JWT on success.
-func (h *Handler) VerifyLogin(w http.ResponseWriter, r *http.Request) {
-	var req model.VerifyLoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
-		return
-	}
-	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
-		return
-	}
-	if !sixDigits.MatchString(req.OTP) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
-		return
-	}
-	resp, err := h.svc.VerifyLogin(r.Context(), req)
+	resp, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
-			return
-		}
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
