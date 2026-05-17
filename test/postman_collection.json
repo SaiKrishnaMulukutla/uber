@@ -510,6 +510,41 @@
           ]
         },
         {
+          "name": "Forgot Password (Rider)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sai@demo.com\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/users/forgot-password", "host": ["{{base_url}}"], "path": ["users", "forgot-password"] },
+            "description": "Sends a 6-digit OTP to the rider's email. Check inbox, then run Reset Password (Rider) with the code."
+          },
+          "response": [
+            { "name": "202 OTP Sent", "status": "Accepted", "code": 202, "body": "{ \"message\": \"OTP sent to sai@demo.com\" }" },
+            { "name": "400 Email Not Found", "status": "Bad Request", "code": 400, "body": "{ \"error\": \"no account found with that email\" }" }
+          ]
+        },
+        {
+          "name": "Reset Password (Rider)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sai@demo.com\",\n  \"otp\": \"{{riderOTP}}\",\n  \"new_password\": \"NewPass123!\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/users/reset-password", "host": ["{{base_url}}"], "path": ["users", "reset-password"] },
+            "description": "Verifies the OTP from Forgot Password and sets the new password. Set `riderOTP` to the 6-digit code from your email before running."
+          },
+          "response": [
+            { "name": "200 Password Reset", "status": "OK", "code": 200, "body": "{ \"message\": \"password reset successfully\" }" },
+            { "name": "401 Invalid OTP", "status": "Unauthorized", "code": 401, "body": "{ \"error\": \"invalid OTP\" }" },
+            { "name": "429 Max Attempts", "status": "Too Many Requests", "code": 429, "body": "{ \"error\": \"max OTP attempts exceeded\" }" }
+          ]
+        },
+        {
           "name": "Refresh Rider Token",
           "request": {
             "method": "POST",
@@ -813,6 +848,41 @@
                 ]
               }
             }
+          ]
+        },
+        {
+          "name": "Forgot Password (Driver)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ravi@demo.com\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/drivers/forgot-password", "host": ["{{base_url}}"], "path": ["drivers", "forgot-password"] },
+            "description": "Sends a 6-digit OTP to the driver's email. Check inbox, then run Reset Password (Driver) with the code."
+          },
+          "response": [
+            { "name": "202 OTP Sent", "status": "Accepted", "code": 202, "body": "{ \"message\": \"OTP sent to ravi@demo.com\" }" },
+            { "name": "400 Email Not Found", "status": "Bad Request", "code": 400, "body": "{ \"error\": \"no account found with that email\" }" }
+          ]
+        },
+        {
+          "name": "Reset Password (Driver)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ravi@demo.com\",\n  \"otp\": \"{{driverOTP}}\",\n  \"new_password\": \"NewPass123!\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/drivers/reset-password", "host": ["{{base_url}}"], "path": ["drivers", "reset-password"] },
+            "description": "Verifies the OTP from Forgot Password and sets the new password. Set `driverOTP` to the 6-digit code from your email before running."
+          },
+          "response": [
+            { "name": "200 Password Reset", "status": "OK", "code": 200, "body": "{ \"message\": \"password reset successfully\" }" },
+            { "name": "401 Invalid OTP", "status": "Unauthorized", "code": 401, "body": "{ \"error\": \"invalid OTP\" }" },
+            { "name": "429 Max Attempts", "status": "Too Many Requests", "code": 429, "body": "{ \"error\": \"max OTP attempts exceeded\" }" }
           ]
         },
         {

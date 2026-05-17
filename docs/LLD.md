@@ -545,9 +545,20 @@ POST /users/login  { email, password }
   └─► bcrypt.CompareHashAndPassword
   └─► issue JWT access + refresh tokens directly
   └─► 200 { access_token, refresh_token, user }
+
+POST /users/forgot-password  { email }
+  └─► verify email exists in DB
+  └─► otp.Send(email) → Redis SET otp:{email} {code} EX 300
+  └─► 202 { message: "OTP sent to {email}" }
+
+POST /users/reset-password  { email, otp, new_password }
+  └─► otp.VerifyOTP(email, otp)
+  └─► bcrypt hash new_password
+  └─► UPDATE users SET password_hash WHERE id
+  └─► 200 { message: "password reset successfully" }
 ```
 
-Registration TTL: **10 minutes** for pending_reg key, **5 minutes** for OTP key. Max OTP attempts: **5** (enforced by `shared/pkg/otp`).
+Registration TTL: **10 minutes** for pending_reg key, **5 minutes** for OTP key. Max OTP attempts: **5** (enforced by `shared/pkg/otp`). Same TTL and attempt limits apply to forgot-password OTP.
 
 ### 8.2 Ride OTP (4-digit)
 
@@ -578,6 +589,8 @@ TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed
 | POST | `/users/register` | — | `{name, email, phone, password}` | `202 {message: "OTP sent"}` |
 | POST | `/users/verify-register` | — | `{email, otp}` | `201 {access_token, refresh_token, user}` |
 | POST | `/users/login` | — | `{email, password}` | `200 {access_token, refresh_token, user}` |
+| POST | `/users/forgot-password` | — | `{email}` | `202 {message: "OTP sent"}` |
+| POST | `/users/reset-password` | — | `{email, otp, new_password}` | `200 {message: "password reset successfully"}` |
 | POST | `/users/refresh` | — | `{refresh_token}` | `200 {access_token, refresh_token}` |
 | GET | `/users/{id}` | Bearer (rider, IDOR) | — | `200 {user}` |
 
@@ -588,6 +601,8 @@ TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed
 | POST | `/drivers/register` | — | `{name, email, phone, password, vehicle_type, license_plate}` | `202 {message: "OTP sent"}` |
 | POST | `/drivers/verify-register` | — | `{email, otp}` | `201 {access_token, refresh_token, driver}` |
 | POST | `/drivers/login` | — | `{email, password}` | `200 {access_token, refresh_token, driver}` |
+| POST | `/drivers/forgot-password` | — | `{email}` | `202 {message: "OTP sent"}` |
+| POST | `/drivers/reset-password` | — | `{email, otp, new_password}` | `200 {message: "password reset successfully"}` |
 | POST | `/drivers/refresh` | — | `{refresh_token}` | `200 {access_token, refresh_token}` |
 | GET | `/drivers/{id}` | Bearer (driver, IDOR) | — | `200 {driver}` |
 | PATCH | `/drivers/{id}/status` | Bearer (driver) | `{status}` | `200 {id, status}` |

@@ -11,7 +11,7 @@
 
 > **Live demo:** `https://api-gateway-ov0j.onrender.com` (Singapore · Render free tier — first request may take ~30 s to cold-start)
 
-A production-style ride-hailing backend built with Go microservices, event-driven architecture (Aiven Kafka), geospatial driver matching (Upstash Redis GEO), Neon PostgreSQL, and an NGINX API gateway — all orchestrated via Docker Compose and deployed on Render.
+Ride-hailing backend in Go. Seven microservices behind an NGINX gateway, event-driven via Aiven Kafka, geospatial driver matching with Upstash Redis GEO, Neon Postgres for persistence. Runs locally with Docker Compose; deployed on Render.
 
 ---
 
@@ -32,18 +32,27 @@ A production-style ride-hailing backend built with Go microservices, event-drive
 
 ## Features
 
-- **OTP-verified registration** — account created only after 6-digit email OTP confirmed; login is password-only (no OTP friction on every login)
-- **Ride OTP confirmation** — 4-digit OTP generated on driver assignment; rider shares it verbally; driver must submit it to start the trip, preventing ghost rides
-- **Geospatial driver matching** — Redis GEO `GEORADIUS` search finds the nearest available driver and assigns via Kafka
-- **Real-time trip tracking** — WebSocket endpoint streams live driver GPS coordinates to the rider
-- **Multi-method payments** — cash (driver-confirmed), UPI (scannable QR + VPA), or Razorpay card; browser-based checkout page with real-time WebSocket completion push
-- **Email notifications** — HTML emails sent on trip completion, cancellation, and payment confirmation
-- **Event-driven consistency** — 5 Kafka topics decouple all services; `ridego.events` merges low-traffic events via `EventEnvelope`; no cross-service foreign keys
-- **JWT authentication** — HS256 access tokens (15 min) + refresh tokens (7 days); role-based guards (rider / driver)
-- **Vehicle categories** — `go` (hatchback), `x` (sedan, default), `xl` (SUV) with per-category base fare and per-km rate
-- **Surge pricing** — fare multiplier computed server-side, capped at 5×; admin-controlled via `GET/PATCH /trips/surge`
-- **Driver earnings dashboard** — `GET /payments/earnings?period=week|month|all` with daily breakdown
-- **Idempotent webhook handling** — duplicate Razorpay events are no-ops
+**Auth**
+- Registration is two steps: `POST /register` sends a 6-digit OTP, account only created after `POST /verify-register` confirms it. Login is password-only — no OTP on every signin.
+- Forgot password goes through OTP too: request a code, verify it, set new password.
+- HS256 JWTs: 15-min access tokens, 7-day refresh tokens, separate rider/driver roles.
+
+**Matching**
+- `POST /trips/request` publishes a Kafka event. matching-service picks it up, finds the nearest available driver via Redis `GEORADIUS`, and sends an offer. Driver has 60 seconds to accept via `POST /drivers/trips/{id}/respond`.
+- Three vehicle tiers: `go` (hatchback), `x` (sedan), `xl` (SUV). Fare is computed server-side with surge capped at 5×.
+
+**Trip lifecycle**
+- Once driver accepts, trip-service generates a 4-digit ride OTP stored in Redis. Driver can only start the trip after the rider reads them the code — cuts down on ghost rides.
+- Live GPS tracking over WebSocket while the trip is in progress.
+
+**Payments**
+- Cash, UPI (QR scan or VPA collect), or Razorpay card. Browser-based checkout page with a WebSocket push on completion.
+- Razorpay webhooks are idempotent — duplicate events do nothing.
+- Driver earnings at `GET /payments/earnings?period=week|month|all`.
+
+**Operations**
+- All inter-service events go through 5 Kafka topics. Low-traffic events (`trip.cancelled`, `rating.submitted`, `payment.completed`) share the `ridego.events` topic via an `EventEnvelope{type, payload}` wrapper.
+- No cross-service DB queries — each service owns its own schema.
 
 ---
 
@@ -149,7 +158,7 @@ payment completed
 
 ## Kafka Topics
 
-5 topics on Aiven (free tier). Low-traffic events are multiplexed onto `ridego.events` using an `EventEnvelope{type, payload}` pattern — consumers switch on `type`.
+5 topics total (Aiven free tier limit). Low-traffic events share `ridego.events` through an `EventEnvelope{type, payload}` wrapper; consumers switch on `type`.
 
 | Topic | Publisher | Consumers |
 |-------|-----------|-----------|
@@ -163,16 +172,16 @@ payment completed
 
 ## Quick Start
 
-**Prerequisites:** Docker, Docker Compose, Go 1.22+
+Requires Docker and Docker Compose. Go 1.22+ only needed if building outside Docker.
 
 ```bash
 git clone https://github.com/SaiKrishnaMulukutla/uber && cd uber
 cp infra/.env.example infra/.env
-# Edit infra/.env — set DATABASE_URL, REDIS_ADDR, KAFKA_*, JWT_SECRET, EMAIL_* values
+# Fill in DATABASE_URL, REDIS_ADDR, KAFKA_*, JWT_SECRET, EMAIL_* — see table below
 make up
 ```
 
-Services start in dependency order. Application services connect to cloud infrastructure (Neon, Upstash, Aiven) and run schema migrations automatically on first boot.
+Services start in dependency order. Each service runs its own migrations on boot and connects to the cloud infra (Neon, Upstash, Aiven) — no local Postgres or Redis needed.
 
 ```bash
 make logs          # tail all service logs
@@ -204,13 +213,13 @@ make clean         # stop + wipe volumes
 | `INTERNAL_SECRET` | yes | Shared secret for matching-service → trip-service calls |
 | `ALLOWED_ORIGINS` | no | Comma-separated WebSocket origin allowlist (empty = allow all) |
 
-> **Email on prod:** Brevo API (port-free HTTP) fires first; Gmail SMTP is local-dev fallback only and will fail on Render.
+> Render blocks ports 465/587, so Gmail SMTP only works locally. On Render, set `BREVO_API_KEY` — Brevo sends over HTTP and has no port issues.
 
 ---
 
 ## API Reference
 
-All requests route through **`http://localhost:8000`**. Authenticated endpoints require `Authorization: Bearer <access_token>`.
+All requests go through `http://localhost:8000`. Authenticated endpoints need `Authorization: Bearer <access_token>`.
 
 ### Users — `/users`
 
@@ -219,6 +228,8 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | POST | `/users/register` | — | Step 1: validate input, send registration OTP |
 | POST | `/users/verify-register` | — | Step 2: verify OTP, create account, issue JWT |
 | POST | `/users/login` | — | Validate password, issue JWT directly |
+| POST | `/users/forgot-password` | — | Send OTP to email for password reset |
+| POST | `/users/reset-password` | — | Verify OTP and set new password |
 | POST | `/users/refresh` | — | Rotate access token using refresh token |
 | GET | `/users/{id}` | Bearer (rider) | Get own profile (IDOR protected) |
 
@@ -229,6 +240,8 @@ All requests route through **`http://localhost:8000`**. Authenticated endpoints 
 | POST | `/drivers/register` | — | Step 1: validate input, send registration OTP |
 | POST | `/drivers/verify-register` | — | Step 2: verify OTP, create account, issue JWT |
 | POST | `/drivers/login` | — | Validate password, issue JWT directly |
+| POST | `/drivers/forgot-password` | — | Send OTP to email for password reset |
+| POST | `/drivers/reset-password` | — | Verify OTP and set new password |
 | POST | `/drivers/refresh` | — | Rotate access token |
 | GET | `/drivers/{id}` | Bearer (driver) | Get own profile |
 | PATCH | `/drivers/{id}/location` | Bearer (driver) | Update GPS location in Redis GEO |
@@ -496,11 +509,9 @@ RAZORPAY_KEY_SECRET=...
 RAZORPAY_WEBHOOK_SECRET=...   # from Razorpay Dashboard → Webhooks
 ```
 
-The webhook URL is automatically registered on startup. To configure manually in the [Razorpay Dashboard](https://dashboard.razorpay.com) → Webhooks:
-- **URL:** `https://your-domain.com/payments/webhook`
-- **Events:** `payment.captured` (card + UPI VPA collect), `qr_code.credited` (UPI QR scan)
+The webhook URL registers automatically on startup. To set it manually: Razorpay Dashboard → Webhooks → `https://your-domain.com/payments/webhook`, events `payment.captured` and `qr_code.credited`.
 
-For local testing use `ngrok http 8000` to expose a public HTTPS URL.
+For local testing, `ngrok http 8000` gives you a public HTTPS URL Razorpay can reach.
 
 ---
 
@@ -528,7 +539,7 @@ card:  PENDING ──► PROCESSING ──► COMPLETED  (Razorpay signature ver
                        └────────► FAILED
 ```
 
-All paths publish `ridego.events {type:payment.completed}` → email + in-app notification to rider.
+Every path ends with `ridego.events {type:payment.completed}` → email + in-app notification to the rider.
 
 ### Fare Formula
 
@@ -542,25 +553,22 @@ fare = base + per_km × distance_km × surge_multiplier   (surge capped at 5×)
 | `x` | ₹50 | ₹12/km | sedan (default) |
 | `xl` | ₹80 | ₹16/km | SUV / MUV |
 
-Driver-supplied distance is accepted only if within `1.5×` the straight-line (haversine) distance and under 200 km — otherwise the haversine value is used.
+Driver-supplied distance is trusted only if it's within 1.5× the haversine and under 200 km. Outside that, haversine wins.
 
 ---
 
 ## Testing
 
 ```bash
-# Unit + integration tests
+# unit tests (no infra needed)
 go test uber/shared/... uber/user-service/... uber/driver-service/... \
   uber/trip-service/... uber/notification-service/... uber/payment-service/...
 
-# Build all services
-make build
-
-# End-to-end (requires stack running)
-bash test/test_all.sh
+make build          # build all services
+bash test/test_all.sh  # e2e (needs the stack running)
 ```
 
-Import `test/postman_collection.json` into Postman for a complete interactive API tour with auto-captured tokens and IDs.
+`test/postman_collection.json` has the full flow with auto-captured tokens and IDs — import it and run the collection top to bottom.
 
 ---
 
