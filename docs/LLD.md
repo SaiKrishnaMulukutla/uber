@@ -195,9 +195,9 @@ All services share a single Upstash Redis instance. Keys are namespaced by prefi
 |---|---|---|---|---|
 | `driver:locations` | GEO set | — | matching-service | Active driver positions for `GEORADIUS` search |
 | `driver:loc:{driverID}` | string (`lat,lng`) | 24h | matching-service, trip-service | Last-known position backup; restored to GEO set after trip end/cancel |
-| `driver:lock:{driverID}` | string | 20s (offerLockTTL) | matching-service | `SETNX` distributed lock; prevents double-matching same driver |
+| `driver:lock:{driverID}` | string | 65s (offerLockTTL) | matching-service | `SETNX` distributed lock; prevents double-matching same driver |
 | `driver:type:{driverID}` | string | — | driver-service | Vehicle type cache (`go`/`x`/`xl`) for vehicle-category filtering in matching |
-| `offer:{tripID}` | string (driverID) | 15s (offerTTL) | matching-service | Pending offer — checked by driver-service on response |
+| `offer:{tripID}` | string (driverID) | 60s (offerTTL) | matching-service | Pending offer — checked by driver-service on response |
 | `offer:req:{tripID}` | string (JSON) | 20s | matching-service | Original `ride.requested` event; used to re-queue if driver rejects/times out |
 | `surge:multiplier` | string (float) | — | trip-service | Current surge multiplier (1.0–5.0); read on every fare calculation |
 | `trip:otp:{tripID}` | string (4-digit) | 2h | trip-service | Ride confirmation OTP; deleted on successful start |
@@ -355,12 +355,12 @@ case kafka.EventTypeRatingSubmitted:
 6. ZREM driver:locations {driverID}
    → removes driver from GEO pool (prevents double-matching while offer pending)
 
-7. SET offer:{tripID} {driverID} EX 15
-   SET offer:req:{tripID} {serialised event JSON} EX 20
+7. SET offer:{tripID} {driverID} EX 60
+   SET offer:req:{tripID} {serialised event JSON} EX 65
 
 8. Publish ride.offered → notification-service notifies driver
 
-9. Goroutine: sleep 15s
+9. Goroutine: sleep 60s
    GET offer:{tripID}
    → if still == driverID (not consumed):
        DEL offer:{tripID}
