@@ -1,0 +1,26 @@
+name: Keep Services Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # every 10 minutes
+  workflow_dispatch:           # manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping all services
+        run: |
+          BASE="https://api-gateway-ov0j.onrender.com"
+          SERVICES=(
+            "$BASE/health"
+            "$BASE/users/health"
+            "$BASE/drivers/health"
+            "$BASE/trips/health"
+            "$BASE/payments/health"
+            "$BASE/notifications/health"
+          )
+          for url in "${SERVICES[@]}"; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "$url")
+            echo "$url → $code"
+          done
