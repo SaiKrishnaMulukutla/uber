@@ -125,7 +125,7 @@ func main() {
 							log.Printf("[trip-poller] failed to publish trip.cancelled for %s: %v", t.ID, err)
 						}
 					}
-					log.Printf("[trip-poller] cancelled stuck trip %s (no driver after 5 min)", t.ID)
+					log.Printf("[trip-poller] cancelled stuck trip %s (no driver after 10 min)", t.ID)
 				}
 			}
 		}

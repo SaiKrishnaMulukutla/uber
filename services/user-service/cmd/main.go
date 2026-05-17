@@ -62,7 +62,7 @@ func main() {
 	}
 
 	otpClient := otp.New(redisClient.RDB(), m)
-	svc := service.NewService(repo, otpClient, redisClient.RDB(), m)
+	svc := service.NewService(repo, otpClient, redisClient, m)
 
 	// Kafka consumers
 	kafkaClient.Subscribe(ctx, kafka.TopicRideGoEvents, "user-ridego-events", func(data []byte) error {
@@ -81,7 +81,9 @@ func main() {
 			return nil
 		}
 		log.Printf("[users] rating.submitted: rider=%s score=%d", ev.RateeID, ev.Score)
-		return repo.UpdateRating(ctx, ev.RateeID, ev.Score)
+		dbCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dbCancel()
+		return repo.UpdateRating(dbCtx, ev.RateeID, ev.Score)
 	})
 
 	h := controllers.NewHandler(svc)

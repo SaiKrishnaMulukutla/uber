@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"uber/driver-service/internal/model"
+	"uber/shared/pkg/httputil"
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/otp"
 	"uber/shared/pkg/validation"
@@ -69,243 +70,245 @@ func (h *Handler) Routes() chi.Router {
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req model.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateName(req.Name) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
 		return
 	}
 	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	if !validation.ValidatePhone(req.Phone) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
 		return
 	}
 	if !validation.ValidatePassword(req.Password) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
 		return
 	}
 	if strings.TrimSpace(req.LicensePlate) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "license_plate is required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "license_plate is required"})
 		return
 	}
 	if err := h.svc.Register(r.Context(), req); err != nil {
 		if errors.Is(err, otp.ErrRateLimitExceeded) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			httputil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
+	httputil.WriteJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
 }
 
 // VerifyRegister confirms the OTP and creates the account, returning a JWT on success.
 func (h *Handler) VerifyRegister(w http.ResponseWriter, r *http.Request) {
 	var req model.VerifyRegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	if !sixDigits.MatchString(req.OTP) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
 		return
 	}
 	resp, err := h.svc.VerifyRegister(r.Context(), req)
 	if err != nil {
 		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			httputil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+	httputil.WriteJSON(w, http.StatusCreated, resp)
 }
 
 // Login validates credentials and returns a JWT directly.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req model.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	if !validation.ValidatePassword(req.Password) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
 		return
 	}
 	resp, err := h.svc.Login(r.Context(), req)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req model.RefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "refresh_token is required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "refresh_token is required"})
 		return
 	}
 	resp, err := h.svc.Refresh(r.Context(), req.RefreshToken)
 	if err != nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	claims := jwt.GetClaims(r.Context())
 	if claims == nil || claims.UserID != id {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
 	var req model.UpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if req.Name != "" && !validation.ValidateName(req.Name) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid name"})
 		return
 	}
 	if req.Phone != "" && !validation.ValidatePhone(req.Phone) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid phone"})
 		return
 	}
 	if req.VehicleType != "" && !validation.ValidateVehicleType(req.VehicleType) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle_type must be go, x, or xl"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "vehicle_type must be go, x, or xl"})
 		return
 	}
 	if req.LicensePlate != "" && strings.TrimSpace(req.LicensePlate) == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid license_plate"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid license_plate"})
 		return
 	}
 	d, err := h.svc.Update(r.Context(), id, req)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	httputil.WriteJSON(w, http.StatusOK, d)
 }
 
 func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	// Check ownership against the URL param before hitting the DB.
+	// This prevents timing-based driver ID enumeration.
+	claims := jwt.GetClaims(r.Context())
+	if claims == nil || claims.UserID != id {
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
 	d, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "driver not found"})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "driver not found"})
 		return
 	}
-	claims := jwt.GetClaims(r.Context())
-	if claims == nil || claims.UserID != d.ID {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-		return
-	}
-	writeJSON(w, http.StatusOK, d)
+	httputil.WriteJSON(w, http.StatusOK, d)
 }
 
 func (h *Handler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	claims := jwt.GetClaims(r.Context())
 	if claims == nil || claims.UserID != id {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
 	var loc model.LocationUpdate
 	if err := json.NewDecoder(r.Body).Decode(&loc); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateCoordinates(loc.Lat, loc.Lng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
 		return
 	}
 	if err := h.svc.UpdateLocation(r.Context(), id, loc.Lat, loc.Lng); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "location_updated"})
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "location_updated"})
 }
 
 func (h *Handler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	claims := jwt.GetClaims(r.Context())
 	if claims == nil || claims.UserID != id {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
 	var req model.StatusUpdate
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateDriverStatus(req.Status) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be available, busy, or offline"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be available, busy, or offline"})
 		return
 	}
 	d, err := h.svc.UpdateStatus(r.Context(), id, req.Status)
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, d)
+	httputil.WriteJSON(w, http.StatusOK, d)
 }
 
 func (h *Handler) GetNearby(w http.ResponseWriter, r *http.Request) {
 	latStr := r.URL.Query().Get("lat")
 	lngStr := r.URL.Query().Get("lng")
 	if latStr == "" || lngStr == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "lat and lng are required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "lat and lng are required"})
 		return
 	}
 	lat, err := strconv.ParseFloat(latStr, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lat"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lat"})
 		return
 	}
 	lng, err := strconv.ParseFloat(lngStr, 64)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lng"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid lng"})
 		return
 	}
 	if !validation.ValidateCoordinates(lat, lng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
 		return
 	}
 	radius := 5.0
 	if v := r.URL.Query().Get("radius"); v != "" {
 		radius, err = strconv.ParseFloat(v, 64)
 		if err != nil || radius <= 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid radius"})
+			httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid radius"})
 			return
 		}
 	}
 	ids, err := h.svc.GetNearby(r.Context(), lat, lng, radius)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"drivers": ids})
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{"drivers": ids})
 }
 
 func (h *Handler) RespondToOffer(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims == nil {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 	tripID := chi.URLParam(r, "tripId")
@@ -313,64 +316,59 @@ func (h *Handler) RespondToOffer(w http.ResponseWriter, r *http.Request) {
 		Accept bool `json:"accept"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if err := h.svc.RespondToOffer(r.Context(), claims.UserID, tripID, req.Accept); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ForgotPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	if err := h.svc.ForgotPassword(r.Context(), req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"message": "OTP sent to " + req.Email})
+	httputil.WriteJSON(w, http.StatusAccepted, map[string]string{"message": "If an account with that email exists, an OTP has been sent."})
 }
 
 func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ResetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateEmail(req.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid email"})
 		return
 	}
 	if !sixDigits.MatchString(req.OTP) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "otp must be exactly 6 digits"})
 		return
 	}
 	if !validation.ValidatePassword(req.NewPassword) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be at least 6 characters"})
 		return
 	}
 	if err := h.svc.ResetPassword(r.Context(), req); err != nil {
 		if errors.Is(err, otp.ErrMaxAttemptsExceeded) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			httputil.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"message": "password reset successfully"})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}

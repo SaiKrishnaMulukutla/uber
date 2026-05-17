@@ -37,6 +37,12 @@ redis.call('EXPIRE', KEYS[1], ARGV[1])
 return count
 `)
 
+var luaIncrAttempts = goredis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+return count
+`)
+
 // Client handles OTP generation, storage, and verification directly via Redis.
 type Client struct {
 	rdb    goredis.UniversalClient
@@ -105,12 +111,10 @@ func (c *Client) VerifyOTP(ctx context.Context, email, otp string) error {
 }
 
 func (c *Client) incrAttempts(ctx context.Context, email string) (int64, error) {
-	key := "attempts:" + email
-	count, err := c.rdb.Incr(ctx, key).Result()
+	count, err := luaIncrAttempts.Run(ctx, c.rdb, []string{"attempts:" + email}, int(attemptsTTL.Seconds())).Int64()
 	if err != nil {
 		return 0, err
 	}
-	c.rdb.Expire(ctx, key, attemptsTTL)
 	return count, nil
 }
 

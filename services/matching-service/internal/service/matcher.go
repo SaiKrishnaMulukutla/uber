@@ -100,8 +100,12 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 		ev.RetryCount++
 		log.Printf("[matching] no drivers for trip %s, retry %d/%d in %s", ev.TripID, ev.RetryCount, maxRetries, retryDelay)
 		go func(retryEv kafka.RideRequestedEvent) {
-			time.Sleep(retryDelay)
-			if pubErr := pub.Publish(context.Background(), kafka.TopicRideRequested, retryEv.TripID, retryEv); pubErr != nil {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(retryDelay):
+			}
+			if pubErr := pub.Publish(ctx, kafka.TopicRideRequested, retryEv.TripID, retryEv); pubErr != nil {
 				log.Printf("[matching] failed to re-publish ride.requested for trip %s: %v", retryEv.TripID, pubErr)
 			}
 		}(ev)
@@ -181,17 +185,21 @@ func handleRideRequested(ctx context.Context, data []byte, pub eventPublisher, g
 	// After offerTTL, if the driver hasn't responded, restore them to the pool
 	// and re-queue the trip for the next candidate.
 	go func(tripID, driverID string, origEvent kafka.RideRequestedEvent, dLat, dLng float64) {
-		time.Sleep(offerTTL)
-		stored, err := geo.GetOffer(context.Background(), tripID)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(offerTTL):
+		}
+		stored, err := geo.GetOffer(ctx, tripID)
 		if err != nil || stored != driverID {
 			return // offer was already consumed (accepted or rejected)
 		}
 		log.Printf("[matching] offer timed out: trip=%s driver=%s — retrying", tripID, driverID)
-		_ = geo.DeleteOffer(context.Background(), tripID)
-		_ = geo.UnlockDriver(context.Background(), driverID)
-		_ = geo.SetDriverLocation(context.Background(), driverID, dLat, dLng)
+		_ = geo.DeleteOffer(ctx, tripID)
+		_ = geo.UnlockDriver(ctx, driverID)
+		_ = geo.SetDriverLocation(ctx, driverID, dLat, dLng)
 		origEvent.SkipDriverIDs = append(origEvent.SkipDriverIDs, driverID)
-		if pubErr := pub.Publish(context.Background(), kafka.TopicRideRequested, tripID, origEvent); pubErr != nil {
+		if pubErr := pub.Publish(ctx, kafka.TopicRideRequested, tripID, origEvent); pubErr != nil {
 			log.Printf("[matching] failed to re-publish after timeout for trip %s: %v", tripID, pubErr)
 		}
 	}(ev.TripID, chosenDriver, ev, lat, lng)

@@ -55,10 +55,10 @@ func (s *paymentService) InitPayment(ctx context.Context, tripID, riderID, rider
 	}
 	p, err := s.repo.Create(ctx, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, paymentMethod, amount)
 	if err != nil {
+		if errors.Is(err, repositories.ErrAlreadyExists) {
+			return s.repo.FindByTripID(ctx, tripID)
+		}
 		return nil, err
-	}
-	if p == nil {
-		return s.repo.FindByTripID(ctx, tripID)
 	}
 	if paymentMethod == "cash" {
 		if err := s.repo.MarkAwaitingCashConfirm(ctx, p.ID); err != nil {
@@ -239,7 +239,7 @@ func (s *paymentService) GetEarnings(ctx context.Context, driverID, period strin
 	case "month":
 		from = now.AddDate(0, -1, 0)
 	default:
-		from = time.Time{} // all time
+		from = now.AddDate(-2, 0, 0) // all time: max 2-year lookback
 		period = "all"
 	}
 	daily, total, trips, err := s.repo.GetDriverEarnings(ctx, driverID, from, now.AddDate(0, 0, 1))
