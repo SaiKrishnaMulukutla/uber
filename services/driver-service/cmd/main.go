@@ -71,6 +71,24 @@ func main() {
 	otpClient := otp.New(redisClient.RDB(), m)
 	svc := service.New(repo, redisClient, otpClient, m, kafkaClient)
 
+	// Startup reconciliation: re-add any available drivers whose Redis GEO entry was
+	// lost (e.g. crash mid-operation, missed Kafka message, partition rebalance).
+	if availableIDs, recErr := repo.GetAvailableDriverIDs(ctx); recErr == nil {
+		restored := 0
+		for _, id := range availableIDs {
+			lat, lng, locErr := redisClient.GetDriverLocation(ctx, id)
+			if locErr != nil {
+				continue // no saved location — driver will re-register on next UpdateLocation
+			}
+			if setErr := redisClient.SetDriverLocation(ctx, id, lat, lng); setErr == nil {
+				restored++
+			}
+		}
+		log.Printf("[driver] GEO reconciliation: checked %d available drivers, restored %d to GEO set", len(availableIDs), restored)
+	} else {
+		log.Printf("[driver] warn: GEO reconciliation skipped: %v", recErr)
+	}
+
 	// Kafka consumers
 	kafkaClient.Subscribe(ctx, kafka.TopicDriverAssigned, "driver-status-assigned", func(data []byte) error {
 		var ev kafka.DriverAssignedEvent
@@ -81,7 +99,7 @@ func main() {
 		return repo.UpdateStatus(ctx, ev.DriverID, model.StatusBusy)
 	})
 
-	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "driver-status-completed", func(data []byte) error {
+	kafkaClient.Subscribe(ctx, kafka.TopicTripCompleted, "driver-trip-completed", func(data []byte) error {
 		var ev kafka.TripCompletedEvent
 		if err := json.Unmarshal(data, &ev); err != nil {
 			return err

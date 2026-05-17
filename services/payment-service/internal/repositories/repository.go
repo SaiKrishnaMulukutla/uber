@@ -2,12 +2,18 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"uber/payment-service/internal/model"
 )
+
+// ErrAlreadyExists is returned by Create when a payment for the given trip_id
+// already exists (ON CONFLICT DO NOTHING suppressed the INSERT).
+var ErrAlreadyExists = errors.New("payment already exists for this trip")
 
 // PaymentRepository defines all persistence operations for payments.
 type PaymentRepository interface {
@@ -54,7 +60,8 @@ func scanPayment(row scanner) (*model.Payment, error) {
 	return p, nil
 }
 
-// Create inserts a new PENDING payment. Returns nil, nil on duplicate trip_id (idempotent).
+// Create inserts a new PENDING payment. Returns ErrAlreadyExists when a
+// payment for this trip_id already exists (ON CONFLICT DO NOTHING fired).
 func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, riderEmail, riderPhone, driverID, paymentMethod, providerName string, amount float64) (*model.Payment, error) {
 	const q = `INSERT INTO payments (trip_id, rider_id, rider_email, rider_phone, driver_id, amount, status, payment_method, provider)
 		VALUES ($1, $2, $3, $4, $5, $6, 'PENDING', $7, $8)
@@ -62,7 +69,10 @@ func (r *pgPaymentRepository) Create(ctx context.Context, tripID, riderID, rider
 		RETURNING ` + selectCols
 	p, err := scanPayment(r.db.QueryRow(ctx, q, tripID, riderID, riderEmail, riderPhone, driverID, amount, paymentMethod, providerName))
 	if err != nil {
-		return nil, nil //nolint:nilerr // ON CONFLICT suppressed the INSERT
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAlreadyExists
+		}
+		return nil, err
 	}
 	return p, nil
 }
