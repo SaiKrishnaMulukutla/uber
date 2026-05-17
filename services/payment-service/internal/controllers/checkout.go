@@ -5,10 +5,24 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"uber/shared/pkg/jwt"
 )
 
 // CheckoutWS upgrades to WebSocket and waits for payment completion signal.
+// Requires a valid access or checkout JWT passed as ?token=<jwt> — browsers
+// cannot send custom headers during a WebSocket upgrade.
 func (h *Handler) CheckoutWS(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("token")
+	if raw == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	claims, err := jwt.Validate(raw)
+	if err != nil || (claims.TokenType != "access" && claims.TokenType != "checkout") {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	paymentID := chi.URLParam(r, "id")
 	h.hub.HandleWS(w, r, paymentID)
 }

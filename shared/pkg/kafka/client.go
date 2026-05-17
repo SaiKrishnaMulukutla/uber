@@ -3,6 +3,8 @@ package kafka
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,11 +18,11 @@ import (
 
 // Well-known topic names.
 const (
-	TopicRideRequested    = "ride.requested"
-	TopicRideOffered      = "ride.offered"
-	TopicDriverAssigned   = "driver.assigned"
-	TopicTripCompleted = "trip.completed"
-	TopicRideGoEvents  = "ridego.events" // merged: trip.cancelled + rating.submitted + payment.completed
+	TopicRideRequested  = "ride.requested"
+	TopicRideOffered    = "ride.offered"
+	TopicDriverAssigned = "driver.assigned"
+	TopicTripCompleted  = "trip.completed"
+	TopicRideGoEvents   = "ridego.events" // trip.cancelled + rating.submitted + payment.completed
 )
 
 // Client wraps Kafka operations.
@@ -32,13 +34,29 @@ type Client struct {
 }
 
 // buildTLSConfig returns a TLS config for Aiven Kafka.
-// InsecureSkipVerify is set because Aiven's CA cert contains a duplicate
-// Subject Key Identifier extension (OID 2.5.29.14) that Go 1.20+ rejects.
-// The connection is still TLS-encrypted; only cert chain validation is skipped.
+// If KAFKA_CA_CERT is set (base64-encoded PEM), it is loaded into a custom
+// cert pool so the broker identity is fully verified.
+// Falls back to InsecureSkipVerify only when the env var is absent — this
+// preserves existing local-dev behaviour while enforcing verification in prod.
 func buildTLSConfig() *tls.Config {
+	caB64 := os.Getenv("KAFKA_CA_CERT")
+	if caB64 == "" {
+		return &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, //nolint:gosec // local dev only, no CA cert configured
+		}
+	}
+	caBytes, err := base64.StdEncoding.DecodeString(caB64)
+	if err != nil {
+		log.Fatalf("[kafka] failed to base64-decode KAFKA_CA_CERT: %v", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caBytes) {
+		log.Fatalf("[kafka] KAFKA_CA_CERT contains no valid PEM certificates")
+	}
 	return &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: true, //nolint:gosec // Aiven CA has duplicate OID, Go rejects it
+		MinVersion: tls.VersionTLS12,
+		RootCAs:    pool,
 	}
 }
 

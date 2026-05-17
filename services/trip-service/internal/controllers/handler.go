@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
-	"uber/trip-service/internal/model"
+	"uber/shared/pkg/httputil"
 	"uber/shared/pkg/jwt"
 	"uber/shared/pkg/validation"
+	"uber/trip-service/internal/model"
 )
 
 // TripServicer is the subset of service.TripService the handler needs.
@@ -86,11 +86,16 @@ func (h *Handler) Routes() chi.Router {
 }
 
 // requireInternalSecret is middleware that rejects requests without the correct
-// X-Internal-Secret header. When the secret is empty (dev/test), it allows all.
+// X-Internal-Secret header. Fails closed: if the secret is not configured, all
+// requests are rejected to prevent accidental open access in production.
 func (h *Handler) requireInternalSecret(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if h.internalSecret != "" && r.Header.Get("X-Internal-Secret") != h.internalSecret {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		if h.internalSecret == "" {
+			httputil.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "internal secret not configured"})
+			return
+		}
+		if r.Header.Get("X-Internal-Secret") != h.internalSecret {
+			httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -100,24 +105,24 @@ func (h *Handler) requireInternalSecret(next http.Handler) http.Handler {
 func (h *Handler) Estimate(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "rider" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only riders can request estimates"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only riders can request estimates"})
 		return
 	}
 	var req model.EstimateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateCoordinates(req.PickupLat, req.PickupLng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pickup coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pickup coordinates"})
 		return
 	}
 	if !validation.ValidateCoordinates(req.DropLat, req.DropLng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
 		return
 	}
 	resp := h.svc.Estimate(r.Context(), req.PickupLat, req.PickupLng, req.DropLat, req.DropLng, req.VehicleType)
-	writeJSON(w, http.StatusOK, resp)
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) Rate(w http.ResponseWriter, r *http.Request) {
@@ -125,57 +130,57 @@ func (h *Handler) Rate(w http.ResponseWriter, r *http.Request) {
 	tripID := chi.URLParam(r, "id")
 	var req model.RateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateRatingScore(req.Score) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "score must be between 1 and 5"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "score must be between 1 and 5"})
 		return
 	}
 	rating, err := h.svc.Rate(r.Context(), tripID, claims.UserID, claims.Role, req)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, rating)
+	httputil.WriteJSON(w, http.StatusCreated, rating)
 }
 
 func (h *Handler) Request(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "rider" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only riders can request trips"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only riders can request trips"})
 		return
 	}
 	var req model.TripRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateCoordinates(req.PickupLat, req.PickupLng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pickup coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid pickup coordinates"})
 		return
 	}
 	if !validation.ValidateCoordinates(req.DropLat, req.DropLng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid drop coordinates"})
 		return
 	}
 	trip, err := h.svc.Request(r.Context(), claims.UserID, claims.Email, claims.Phone, req)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"trip_id": trip.ID, "status": trip.Status})
+	httputil.WriteJSON(w, http.StatusCreated, map[string]any{"trip_id": trip.ID, "status": trip.Status})
 }
 
 func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	t, err := h.svc.GetByID(r.Context(), chi.URLParam(r, "id"))
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
 	claims := jwt.GetClaims(r.Context())
 	if claims.UserID != t.RiderID && (t.DriverID == nil || claims.UserID != *t.DriverID) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not your trip"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "not your trip"})
 		return
 	}
 	// Show the ride OTP only to the rider while the trip is awaiting start.
@@ -184,7 +189,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 			t.RideOTP = &otp
 		}
 	}
-	writeJSON(w, http.StatusOK, t)
+	httputil.WriteJSON(w, http.StatusOK, t)
 }
 
 // Assign is an internal endpoint called by matching-service (not user clients).
@@ -192,86 +197,86 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Assign(w http.ResponseWriter, r *http.Request) {
 	var req model.AssignRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if req.DriverID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "driver_id is required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "driver_id is required"})
 		return
 	}
 	t, err := h.svc.AssignDriver(r.Context(), chi.URLParam(r, "id"), req.DriverID)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	httputil.WriteJSON(w, http.StatusOK, t)
 }
 
 func (h *Handler) Start(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "driver" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can start trips"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can start trips"})
 		return
 	}
 	var req model.StartRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	if req.OTP == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "otp is required"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "otp is required"})
 		return
 	}
 	t, err := h.svc.Start(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.OTP)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	httputil.WriteJSON(w, http.StatusOK, t)
 }
 
 func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	var req model.CancelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	if len(req.Reason) > 500 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "reason must be 500 characters or fewer"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "reason must be 500 characters or fewer"})
 		return
 	}
 	t, err := h.svc.Cancel(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.Reason)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	httputil.WriteJSON(w, http.StatusOK, t)
 }
 
 func (h *Handler) End(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "driver" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can end trips"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can end trips"})
 		return
 	}
 	var req model.EndRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
 	t, err := h.svc.End(r.Context(), chi.URLParam(r, "id"), claims.UserID, req.DistanceKm)
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, t)
+	httputil.WriteJSON(w, http.StatusOK, t)
 }
 
 func (h *Handler) PushLocation(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
 	if claims.Role != "driver" {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can push location"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only drivers can push location"})
 		return
 	}
 	tripID := chi.URLParam(r, "id")
@@ -280,24 +285,24 @@ func (h *Handler) PushLocation(w http.ResponseWriter, r *http.Request) {
 		Lng float64 `json:"lng"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	if !validation.ValidateCoordinates(req.Lat, req.Lng) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid coordinates"})
 		return
 	}
 	if err := h.svc.PushLocation(r.Context(), tripID, claims.UserID, req.Lat, req.Lng); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	h.hub.BroadcastLocation(tripID, req.Lat, req.Lng)
-	writeJSON(w, http.StatusOK, map[string]string{"message": "location updated"})
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"message": "location updated"})
 }
 
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	claims := jwt.GetClaims(r.Context())
-	limit, offset := parsePagination(r)
+	limit, offset := httputil.ParsePagination(r, 10)
 
 	var resp *model.HistoryResponse
 	var err error
@@ -307,40 +312,19 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	case "driver":
 		resp, err = h.svc.ListByDriver(r.Context(), claims.UserID, limit, offset)
 	default:
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid role"})
+		httputil.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "invalid role"})
 		return
 	}
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, resp)
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
-func parsePagination(r *http.Request) (limit, offset int) {
-	limit = 10
-	offset = 0
-	if v := r.URL.Query().Get("limit"); v != "" {
-		if l, err := strconv.Atoi(v); err == nil && l > 0 {
-			limit = l
-		}
-	}
-	if limit > 50 {
-		limit = 50
-	}
-	if v := r.URL.Query().Get("offset"); v != "" {
-		if o, err := strconv.Atoi(v); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-	if offset > 10000 {
-		offset = 10000
-	}
-	return
-}
 
 func (h *Handler) GetSurge(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]float64{"multiplier": h.svc.GetSurge(r.Context())})
+	httputil.WriteJSON(w, http.StatusOK, map[string]float64{"multiplier": h.svc.GetSurge(r.Context())})
 }
 
 func (h *Handler) SetSurge(w http.ResponseWriter, r *http.Request) {
@@ -348,7 +332,7 @@ func (h *Handler) SetSurge(w http.ResponseWriter, r *http.Request) {
 		Multiplier float64 `json:"multiplier"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	const (
@@ -356,18 +340,13 @@ func (h *Handler) SetSurge(w http.ResponseWriter, r *http.Request) {
 		maxSurge = 5.0
 	)
 	if req.Multiplier < minSurge || req.Multiplier > maxSurge {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "multiplier must be between 1.0 and 5.0"})
+		httputil.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "multiplier must be between 1.0 and 5.0"})
 		return
 	}
 	if err := h.svc.SetSurge(r.Context(), req.Multiplier); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		httputil.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]float64{"multiplier": req.Multiplier})
+	httputil.WriteJSON(w, http.StatusOK, map[string]float64{"multiplier": req.Multiplier})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
