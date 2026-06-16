@@ -238,6 +238,12 @@ services:
       - TRIP_SERVICE_URL=http://trip-service:8083
       - NOTIFICATION_SERVICE_URL=http://notification-service:8084
       - PAYMENT_SERVICE_URL=http://payment-service:8085
+      # host:port form for the keepalive upstream pools
+      - USER_SERVICE_ADDR=user-service:8081
+      - DRIVER_SERVICE_ADDR=driver-service:8082
+      - TRIP_SERVICE_ADDR=trip-service:8083
+      - NOTIFICATION_SERVICE_ADDR=notification-service:8084
+      - PAYMENT_SERVICE_ADDR=payment-service:8085
     depends_on:
       - user-service
       - driver-service
