@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/json"
-	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,14 +25,6 @@ import (
 	"uber/trip-service/internal/service"
 	"uber/trip-service/migrations"
 )
-
-func generateRideOTP() (string, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(10_000))
-	if err != nil {
-		return "", fmt.Errorf("generateRideOTP: %w", err)
-	}
-	return fmt.Sprintf("%04d", n.Int64()), nil
-}
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -79,16 +68,8 @@ func main() {
 			return err
 		}
 		log.Printf("[trip] driver.assigned: trip=%s driver=%s", ev.TripID, ev.DriverID)
-		if err := repo.AssignDriver(ctx, ev.TripID, ev.DriverID); err != nil {
+		if _, err := svc.AssignDriver(ctx, ev.TripID, ev.DriverID); err != nil {
 			return err
-		}
-		otp, err := generateRideOTP()
-		if err != nil {
-			log.Printf("[trip] warn: failed to generate OTP for trip %s: %v", ev.TripID, err)
-			return nil // non-fatal: trip is assigned, OTP failure shouldn't block
-		}
-		if err := redisClient.SetTripOTP(ctx, ev.TripID, otp); err != nil {
-			log.Printf("[trip] warn: failed to store OTP for trip %s: %v", ev.TripID, err)
 		}
 		return nil
 	})
