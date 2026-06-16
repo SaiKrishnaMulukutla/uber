@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
 	"math"
+	"math/big"
 	"time"
 
 	"github.com/google/uuid"
@@ -106,7 +108,22 @@ func (s *tripService) AssignDriver(ctx context.Context, tripID, driverID string)
 	if err := s.repo.AssignDriver(ctx, tripID, driverID); err != nil {
 		return nil, err
 	}
+	if otp, err := generateRideOTP(); err == nil {
+		if storeErr := s.redis.SetTripOTP(ctx, tripID, otp); storeErr != nil {
+			log.Printf("[trip] warn: failed to store OTP for trip %s: %v", tripID, storeErr)
+		}
+	} else {
+		log.Printf("[trip] warn: failed to generate OTP for trip %s: %v", tripID, err)
+	}
 	return s.repo.FindByID(ctx, tripID)
+}
+
+func generateRideOTP() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(10_000))
+	if err != nil {
+		return "", fmt.Errorf("generateRideOTP: %w", err)
+	}
+	return fmt.Sprintf("%04d", n.Int64()), nil
 }
 
 func (s *tripService) Start(ctx context.Context, tripID, callerID, otp string) (*model.Trip, error) {

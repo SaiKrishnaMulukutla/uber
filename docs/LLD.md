@@ -197,6 +197,7 @@ All services share a single Upstash Redis instance. Keys are namespaced by prefi
 | `driver:loc:{driverID}` | string (`lat,lng`) | 24h | matching-service, trip-service | Last-known position backup; restored to GEO set after trip end/cancel |
 | `driver:lock:{driverID}` | string | 65s (offerLockTTL) | matching-service | `SETNX` distributed lock; prevents double-matching same driver |
 | `driver:type:{driverID}` | string | — | driver-service | Vehicle type cache (`go`/`x`/`xl`) for vehicle-category filtering in matching |
+| `rt:{jti}` | string (`"1"`) | 7 days | user-service, driver-service | Refresh token revocability — JTI stored on issue, deleted on use (rotation) or logout |
 | `offer:{tripID}` | string (driverID) | 60s (offerTTL) | matching-service | Pending offer — checked by driver-service on response |
 | `offer:req:{tripID}` | string (JSON) | 20s | matching-service | Original `ride.requested` event; used to re-queue if driver rejects/times out |
 | `surge:multiplier` | string (float) | — | trip-service | Current surge multiplier (1.0–5.0); read on every fare calculation |
@@ -563,12 +564,18 @@ Registration TTL: **10 minutes** for pending_reg key, **5 minutes** for OTP key.
 ### 8.2 Ride OTP (4-digit)
 
 ```
-driver.assigned Kafka event consumed by trip-service
+svc.AssignDriver() called — either via:
+  a) Kafka: driver.assigned event consumed by trip-service → svc.AssignDriver()
+  b) HTTP:  PATCH /trips/{id}/assign (X-Internal-Secret) → svc.AssignDriver()
+
+  └─► repo.AssignDriver() (DB: status → DRIVER_ASSIGNED)
   └─► crypto/rand → 4-digit code (0000–9999)
   └─► Redis SET trip:otp:{tripID} {code} EX 7200   (2 hour TTL)
 
 GET /trips/{id} (called by rider, when status = DRIVER_ASSIGNED)
   └─► response includes ride_otp field (only populated for the rider)
+
+  [Rider reads OTP aloud to driver on arrival]
 
 PATCH /trips/{id}/start  { otp }  (called by driver)
   └─► Redis GET trip:otp:{tripID}
@@ -577,6 +584,8 @@ PATCH /trips/{id}/start  { otp }  (called by driver)
 ```
 
 TTL: **2 hours**. No retry limit (wrong OTP simply returns 400). OTP is consumed on first successful start.
+
+> **Note:** OTP generation lives in `svc.AssignDriver()` (service layer) — not in the Kafka consumer or HTTP handler. Both code paths call the same service method, so the OTP is always generated regardless of how assignment was triggered.
 
 ---
 
@@ -704,6 +713,11 @@ func (c *Client) DeleteTripOTP(ctx, tripID) error
 
 // Driver type cache
 func (c *Client) GetDriverType(ctx, driverID) string
+
+// Refresh token revocability
+func (c *Client) StoreRefreshToken(ctx, jti string, ttl time.Duration) error  // SET rt:{jti} "1" EX ttl
+func (c *Client) IsRefreshTokenValid(ctx, jti string) bool                     // GET rt:{jti} != nil
+func (c *Client) RevokeRefreshToken(ctx, jti string)                           // DEL rt:{jti}
 
 // Ping
 func (c *Client) Ping(ctx) error

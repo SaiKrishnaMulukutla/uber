@@ -14,4 +14,4 @@ RUN apk add --no-cache gettext \
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "envsubst '${USER_SERVICE_URL} ${DRIVER_SERVICE_URL} ${TRIP_SERVICE_URL} ${NOTIFICATION_SERVICE_URL} ${PAYMENT_SERVICE_URL}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
+CMD ["sh", "-c", "envsubst '${USER_SERVICE_URL} ${DRIVER_SERVICE_URL} ${TRIP_SERVICE_URL} ${NOTIFICATION_SERVICE_URL} ${PAYMENT_SERVICE_URL} ${USER_SERVICE_ADDR} ${DRIVER_SERVICE_ADDR} ${TRIP_SERVICE_ADDR} ${NOTIFICATION_SERVICE_ADDR} ${PAYMENT_SERVICE_ADDR}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"]
