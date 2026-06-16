@@ -23,8 +23,8 @@ func Connect(ctx context.Context, dsn string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("postgres: invalid dsn: %w", err)
 	}
-	config.MaxConns = 10
-	config.MinConns = 2
+	config.MaxConns = 50
+	config.MinConns = 10
 	config.MaxConnIdleTime = 5 * time.Minute
 	config.MaxConnLifetime = 30 * time.Minute
 

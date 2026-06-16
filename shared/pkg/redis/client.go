@@ -25,8 +25,8 @@ func NewClient(addr string) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("redis: invalid URL: %w", err)
 		}
-		opts.PoolSize = 3
-		opts.MinIdleConns = 1
+		opts.PoolSize = 100
+		opts.MinIdleConns = 10
 		opts.ConnMaxIdleTime = 30 * time.Second
 		opts.DialTimeout = 10 * time.Second
 		opts.ReadTimeout = 5 * time.Second
@@ -36,8 +36,8 @@ func NewClient(addr string) (*Client, error) {
 	} else {
 		rdb = goredis.NewClient(&goredis.Options{
 			Addr:            addr,
-			PoolSize:        3,
-			MinIdleConns:    1,
+			PoolSize:        100,
+			MinIdleConns:    10,
 			ConnMaxIdleTime: 30 * time.Second,
 			DialTimeout:     10 * time.Second,
 			ReadTimeout:     5 * time.Second,
